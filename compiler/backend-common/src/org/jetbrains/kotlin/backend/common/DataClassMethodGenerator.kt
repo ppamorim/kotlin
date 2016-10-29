@@ -18,6 +18,8 @@ package org.jetbrains.kotlin.backend.common
 
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.descriptors.*
+import org.jetbrains.kotlin.descriptors.CallableMemberDescriptor.Kind.FAKE_OVERRIDE
+import org.jetbrains.kotlin.descriptors.CallableMemberDescriptor.Kind.SYNTHESIZED
 import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtClass
@@ -112,7 +114,7 @@ abstract class DataClassMethodGenerator(private val declaration: KtClassOrObject
     ): FunctionDescriptor? =
             classDescriptor.unsubstitutedMemberScope.getContributedFunctions(Name.identifier(name), NoLookupLocation.FROM_BACKEND)
                     .singleOrNull { function ->
-                        !function.kind.isReal &&
+                        function.kind.let { kind -> kind == SYNTHESIZED || kind == FAKE_OVERRIDE } &&
                         function.modality != Modality.FINAL &&
                         areParametersOk(function.valueParameters) &&
                         function.returnType != null &&

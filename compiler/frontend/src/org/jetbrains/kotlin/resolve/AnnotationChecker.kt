@@ -46,6 +46,9 @@ class AnnotationChecker(private val additionalCheckers: Iterable<AdditionalAnnot
             annotated.typeReference?.let { check(it, trace) }
             annotated.receiverTypeReference?.let { check(it, trace) }
         }
+        if (annotated is KtTypeAlias) {
+            annotated.getTypeReference()?.let { check(it, trace) }
+        }
         if (annotated is KtTypeParameterListOwner && annotated is KtCallableDeclaration) {
             // TODO: support type parameter annotations for type parameters on classes and properties
             annotated.typeParameters.forEach { check(it, trace) }
@@ -184,7 +187,10 @@ class AnnotationChecker(private val additionalCheckers: Iterable<AdditionalAnnot
                         TargetLists.T_TOP_LEVEL_PROPERTY(descriptor.hasBackingField(trace), annotated.hasDelegate())
                 }
                 is KtParameter -> {
-                    if (annotated.hasValOrVar())
+                    val destructuringDeclaration = annotated.destructuringDeclaration
+                    if (destructuringDeclaration != null)
+                        TargetLists.T_DESTRUCTURING_DECLARATION
+                    else if (annotated.hasValOrVar())
                         TargetLists.T_VALUE_PARAMETER_WITH_VAL
                     else
                         TargetLists.T_VALUE_PARAMETER_WITHOUT_VAL

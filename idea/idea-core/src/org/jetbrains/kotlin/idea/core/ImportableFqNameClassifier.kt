@@ -51,8 +51,8 @@ class ImportableFqNameClassifier(private val file: KtFile) {
     enum class Classification {
         fromCurrentPackage,
         topLevelPackage,
-        defaultImport,
         preciseImport,
+        defaultImport,
         allUnderImport,
         siblingImported,
         notImported,
@@ -93,4 +93,4 @@ class ImportableFqNameClassifier(private val file: KtFile) {
 }
 
 fun isJavaClassNotToBeUsedInKotlin(fqName: FqName): Boolean
-        = JavaToKotlinClassMap.INSTANCE.mapPlatformClass(fqName, DefaultBuiltIns.Instance).isNotEmpty() || JavaAnnotationMapper.javaToKotlinNameMap[fqName] != null
+        = JavaToKotlinClassMap.INSTANCE.isJavaPlatformClass(fqName) || JavaAnnotationMapper.javaToKotlinNameMap[fqName] != null

@@ -26,8 +26,8 @@ import org.jetbrains.kotlin.com.intellij.openapi.util.io.ZipFileCache
 import org.jetbrains.kotlin.com.intellij.openapi.vfs.impl.ZipHandler
 import org.jetbrains.kotlin.com.intellij.openapi.vfs.impl.jar.CoreJarFileSystem
 import org.jetbrains.kotlin.gradle.tasks.AbstractKotlinCompile
-import org.jetbrains.kotlin.gradle.tasks.ArtifactDifferenceRegistry
-import org.jetbrains.kotlin.gradle.tasks.incremental.BuildCacheStorage
+import org.jetbrains.kotlin.incremental.BuildCacheStorage
+import org.jetbrains.kotlin.incremental.multiproject.ArtifactDifferenceRegistryProvider
 import java.io.File
 
 private fun comparableVersionStr(version: String) =
@@ -40,7 +40,7 @@ private fun comparableVersionStr(version: String) =
                 ?.let { if (it.all { (it?.value?.length ?: 0).let { it > 0 && it < 4 }}) it else null }
                 ?.joinToString(".", transform = { it!!.value.padStart(3, '0') })
 
-class KotlinGradleBuildServices private constructor(gradle: Gradle): BuildAdapter() {
+internal class KotlinGradleBuildServices private constructor(gradle: Gradle): BuildAdapter() {
     companion object {
         private val CLASS_NAME = KotlinGradleBuildServices::class.java.simpleName
         const val FORCE_SYSTEM_GC_MESSAGE = "Forcing System.gc()"
@@ -76,8 +76,8 @@ class KotlinGradleBuildServices private constructor(gradle: Gradle): BuildAdapte
     private val workingDir = File(gradle.rootProject.buildDir, "kotlin-build").apply { mkdirs() }
     private val buildCacheStorage = BuildCacheStorage(workingDir)
 
-    internal val artifactDifferenceRegistry: ArtifactDifferenceRegistry
-            get() = buildCacheStorage.artifactDifferenceRegistry
+    internal val artifactDifferenceRegistryProvider: ArtifactDifferenceRegistryProvider
+            get() = buildCacheStorage
 
     // There is function with the same name in BuildAdapter,
     // but it is called before any plugin can attach build listener
@@ -133,7 +133,7 @@ class KotlinGradleBuildServices private constructor(gradle: Gradle): BuildAdapte
 }
 
 
-class CompilerServicesCleanup() {
+internal class CompilerServicesCleanup() {
     private val log = Logging.getLogger(this.javaClass)
 
     operator fun invoke(gradleVersion: String) {

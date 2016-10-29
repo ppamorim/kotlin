@@ -67,11 +67,11 @@ public abstract class AnnotationCodegen {
 
     private static final AnnotationVisitor NO_ANNOTATION_VISITOR = new AnnotationVisitor(Opcodes.ASM5) {};
 
-    private final MemberCodegen<?> memberCodegen;
+    private final InnerClassConsumer innerClassConsumer;
     private final KotlinTypeMapper typeMapper;
 
-    private AnnotationCodegen(@NotNull MemberCodegen<?> memberCodegen, @NotNull KotlinTypeMapper mapper) {
-        this.memberCodegen = memberCodegen;
+    private AnnotationCodegen(@NotNull InnerClassConsumer innerClassConsumer, @NotNull KotlinTypeMapper mapper) {
+        this.innerClassConsumer = innerClassConsumer;
         this.typeMapper = mapper;
     }
 
@@ -281,14 +281,14 @@ public abstract class AnnotationCodegen {
         ClassifierDescriptor classifierDescriptor = annotationDescriptor.getType().getConstructor().getDeclarationDescriptor();
         assert classifierDescriptor != null : "Annotation descriptor has no class: " + annotationDescriptor;
         RetentionPolicy rp = getRetentionPolicy(classifierDescriptor);
-        if (rp == RetentionPolicy.SOURCE && typeMapper.getClassBuilderMode() == ClassBuilderMode.FULL) {
+        if (rp == RetentionPolicy.SOURCE && !typeMapper.getClassBuilderMode().generateSourceRetentionAnnotations) {
             return null;
         }
 
         String descriptor = typeMapper.mapType(annotationDescriptor.getType()).getDescriptor();
 
         if (classifierDescriptor instanceof ClassDescriptor) {
-            memberCodegen.addInnerClassInfoFromAnnotation(((ClassDescriptor) classifierDescriptor));
+            innerClassConsumer.addInnerClassInfoFromAnnotation(((ClassDescriptor) classifierDescriptor));
         }
 
         AnnotationVisitor annotationVisitor = visitAnnotation(descriptor, rp == RetentionPolicy.RUNTIME);
@@ -407,14 +407,10 @@ public abstract class AnnotationCodegen {
 
             private Void visitUnsupportedValue(ConstantValue<?> value) {
                 ClassBuilderMode mode = typeMapper.getClassBuilderMode();
-                switch (mode) {
-                    case FULL:
-                        throw new IllegalStateException("Don't know how to compile annotation value " + value);
-                    case LIGHT_CLASSES:
-                    case KAPT:
-                        return null;
-                    default:
-                        throw new IllegalStateException("Unknown builder mode: " + mode);
+                if (mode.generateBodies) {
+                    throw new IllegalStateException("Don't know how to compile annotation value " + value);
+                } else {
+                    return null;
                 }
             }
         };
@@ -490,10 +486,10 @@ public abstract class AnnotationCodegen {
 
     public static AnnotationCodegen forClass(
             final @NotNull ClassVisitor cv,
-            @NotNull MemberCodegen<?> memberCodegen,
+            @NotNull InnerClassConsumer innerClassConsumer,
             @NotNull KotlinTypeMapper mapper
     ) {
-        return new AnnotationCodegen(memberCodegen, mapper) {
+        return new AnnotationCodegen(innerClassConsumer, mapper) {
             @NotNull
             @Override
             AnnotationVisitor visitAnnotation(String descr, boolean visible) {
@@ -504,10 +500,10 @@ public abstract class AnnotationCodegen {
 
     public static AnnotationCodegen forMethod(
             final @NotNull MethodVisitor mv,
-            @NotNull MemberCodegen<?> memberCodegen,
+            @NotNull InnerClassConsumer innerClassConsumer,
             @NotNull KotlinTypeMapper mapper
     ) {
-        return new AnnotationCodegen(memberCodegen, mapper) {
+        return new AnnotationCodegen(innerClassConsumer, mapper) {
             @NotNull
             @Override
             AnnotationVisitor visitAnnotation(String descr, boolean visible) {
@@ -518,10 +514,10 @@ public abstract class AnnotationCodegen {
 
     public static AnnotationCodegen forField(
             final @NotNull FieldVisitor fv,
-            @NotNull MemberCodegen<?> memberCodegen,
+            @NotNull InnerClassConsumer innerClassConsumer,
             @NotNull KotlinTypeMapper mapper
     ) {
-        return new AnnotationCodegen(memberCodegen, mapper) {
+        return new AnnotationCodegen(innerClassConsumer, mapper) {
             @NotNull
             @Override
             AnnotationVisitor visitAnnotation(String descr, boolean visible) {
@@ -533,10 +529,10 @@ public abstract class AnnotationCodegen {
     public static AnnotationCodegen forParameter(
             final int parameter,
             final @NotNull MethodVisitor mv,
-            @NotNull MemberCodegen<?> memberCodegen,
+            @NotNull InnerClassConsumer innerClassConsumer,
             @NotNull KotlinTypeMapper mapper
     ) {
-        return new AnnotationCodegen(memberCodegen, mapper) {
+        return new AnnotationCodegen(innerClassConsumer, mapper) {
             @NotNull
             @Override
             AnnotationVisitor visitAnnotation(String descr, boolean visible) {
@@ -547,10 +543,10 @@ public abstract class AnnotationCodegen {
 
     public static AnnotationCodegen forAnnotationDefaultValue(
             final @NotNull MethodVisitor mv,
-            @NotNull MemberCodegen<?> memberCodegen,
+            @NotNull InnerClassConsumer innerClassConsumer,
             @NotNull KotlinTypeMapper mapper
     ) {
-        return new AnnotationCodegen(memberCodegen, mapper) {
+        return new AnnotationCodegen(innerClassConsumer, mapper) {
             @NotNull
             @Override
             AnnotationVisitor visitAnnotation(String descr, boolean visible) {

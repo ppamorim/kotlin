@@ -19,11 +19,13 @@ package org.jetbrains.kotlin.resolve.jvm.platform
 import org.jetbrains.kotlin.container.StorageComponentContainer
 import org.jetbrains.kotlin.container.useImpl
 import org.jetbrains.kotlin.container.useInstance
+import org.jetbrains.kotlin.platform.JavaToKotlinClassMap
 import org.jetbrains.kotlin.resolve.PlatformConfigurator
 import org.jetbrains.kotlin.resolve.jvm.JvmOverloadFilter
 import org.jetbrains.kotlin.resolve.jvm.JvmTypeSpecificityComparator
 import org.jetbrains.kotlin.resolve.jvm.RuntimeAssertionsTypeChecker
 import org.jetbrains.kotlin.resolve.jvm.checkers.*
+import org.jetbrains.kotlin.synthetic.JavaSyntheticConstructorsProvider
 import org.jetbrains.kotlin.synthetic.JavaSyntheticScopes
 import org.jetbrains.kotlin.types.DynamicTypesSettings
 
@@ -53,8 +55,7 @@ object JvmPlatformConfigurator : PlatformConfigurator(
                 UnsupportedSyntheticCallableReferenceChecker(),
                 SuperCallWithDefaultArgumentsChecker(),
                 MissingDependencyClassChecker(),
-                ProtectedSyntheticExtensionCallChecker,
-                AdditionalBuiltInsMembersCallChecker
+                ProtectedSyntheticExtensionCallChecker
         ),
 
         additionalTypeCheckers = listOf(
@@ -73,14 +74,14 @@ object JvmPlatformConfigurator : PlatformConfigurator(
 
         identifierChecker = JvmSimpleNameBacktickChecker,
 
-        overloadFilter = JvmOverloadFilter
+        overloadFilter = JvmOverloadFilter,
+
+        platformToKotlinClassMap = JavaToKotlinClassMap.INSTANCE
 ) {
-
-    override fun configure(container: StorageComponentContainer) {
-        super.configure(container)
-
-        container.useImpl<ReflectionAPICallChecker>()
+    override fun configureModuleComponents(container: StorageComponentContainer) {
+        container.useImpl<JvmReflectionAPICallChecker>()
         container.useImpl<JavaSyntheticScopes>()
+        container.useInstance(JavaSyntheticConstructorsProvider)
         container.useInstance(JvmTypeSpecificityComparator)
     }
 }

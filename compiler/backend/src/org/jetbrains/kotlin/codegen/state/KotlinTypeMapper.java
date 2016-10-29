@@ -36,10 +36,12 @@ import org.jetbrains.kotlin.codegen.signature.JvmSignatureWriter;
 import org.jetbrains.kotlin.descriptors.*;
 import org.jetbrains.kotlin.descriptors.impl.LocalVariableAccessorDescriptor;
 import org.jetbrains.kotlin.descriptors.impl.LocalVariableDescriptor;
+import org.jetbrains.kotlin.descriptors.impl.TypeAliasConstructorDescriptor;
 import org.jetbrains.kotlin.fileClasses.FileClasses;
 import org.jetbrains.kotlin.fileClasses.JvmFileClassInfo;
 import org.jetbrains.kotlin.fileClasses.JvmFileClassUtil;
 import org.jetbrains.kotlin.fileClasses.JvmFileClassesProvider;
+import org.jetbrains.kotlin.ir.descriptors.IrBuiltinsPackageFragmentDescriptor;
 import org.jetbrains.kotlin.load.java.BuiltinMethodsWithSpecialGenericSignature;
 import org.jetbrains.kotlin.load.java.BuiltinMethodsWithSpecialGenericSignature.SpecialSignatureInfo;
 import org.jetbrains.kotlin.load.java.JvmAbi;
@@ -49,8 +51,7 @@ import org.jetbrains.kotlin.load.java.descriptors.JavaCallableMemberDescriptor;
 import org.jetbrains.kotlin.load.java.descriptors.JavaClassDescriptor;
 import org.jetbrains.kotlin.load.java.lazy.descriptors.LazyJavaPackageFragment;
 import org.jetbrains.kotlin.load.kotlin.*;
-import org.jetbrains.kotlin.load.kotlin.incremental.IncrementalPackageFragmentProvider;
-import org.jetbrains.kotlin.load.kotlin.incremental.components.IncrementalCache;
+import org.jetbrains.kotlin.load.kotlin.incremental.IncrementalPackageFragmentProvider.IncrementalMultifileClassPackageFragment;
 import org.jetbrains.kotlin.name.ClassId;
 import org.jetbrains.kotlin.name.FqName;
 import org.jetbrains.kotlin.name.Name;
@@ -61,7 +62,6 @@ import org.jetbrains.kotlin.psi.KtFile;
 import org.jetbrains.kotlin.psi.KtFunctionLiteral;
 import org.jetbrains.kotlin.psi.KtLambdaExpression;
 import org.jetbrains.kotlin.resolve.*;
-import org.jetbrains.kotlin.resolve.annotations.AnnotationUtilKt;
 import org.jetbrains.kotlin.resolve.calls.model.DefaultValueArgument;
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall;
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedValueArgument;
@@ -81,7 +81,7 @@ import org.jetbrains.org.objectweb.asm.commons.Method;
 import java.util.Collection;
 import java.util.List;
 
-import static org.jetbrains.kotlin.codegen.AsmUtil.*;
+import static org.jetbrains.kotlin.codegen.AsmUtil.isStaticMethod;
 import static org.jetbrains.kotlin.codegen.JvmCodegenUtil.*;
 import static org.jetbrains.kotlin.codegen.binding.CodegenBinding.*;
 import static org.jetbrains.kotlin.resolve.BindingContextUtils.getDelegationConstructorCall;
@@ -96,9 +96,10 @@ public class KotlinTypeMapper {
     private final BindingContext bindingContext;
     private final ClassBuilderMode classBuilderMode;
     private final JvmFileClassesProvider fileClassesProvider;
-    private final IncrementalCache incrementalCache;
     private final IncompatibleClassTracker incompatibleClassTracker;
     private final String moduleName;
+    private final boolean isJvm8Target;
+
     private final TypeMappingConfiguration<Type> typeMappingConfiguration = new TypeMappingConfiguration<Type>() {
         @NotNull
         @Override
@@ -114,7 +115,7 @@ public class KotlinTypeMapper {
 
         @Override
         public void processErrorType(@NotNull KotlinType kotlinType, @NotNull ClassDescriptor descriptor) {
-            if (classBuilderMode == ClassBuilderMode.FULL) {
+            if (classBuilderMode.generateBodies) {
                 throw new IllegalStateException(generateErrorMessageForErrorType(kotlinType, descriptor));
             }
         }
@@ -124,16 +125,16 @@ public class KotlinTypeMapper {
             @NotNull BindingContext bindingContext,
             @NotNull ClassBuilderMode classBuilderMode,
             @NotNull JvmFileClassesProvider fileClassesProvider,
-            @Nullable IncrementalCache incrementalCache,
             @NotNull IncompatibleClassTracker incompatibleClassTracker,
-            @NotNull String moduleName
+            @NotNull String moduleName,
+            boolean isJvm8Target
     ) {
         this.bindingContext = bindingContext;
         this.classBuilderMode = classBuilderMode;
         this.fileClassesProvider = fileClassesProvider;
-        this.incrementalCache = incrementalCache;
         this.incompatibleClassTracker = incompatibleClassTracker;
         this.moduleName = moduleName;
+        this.isJvm8Target = isJvm8Target;
     }
 
     @NotNull
@@ -151,7 +152,7 @@ public class KotlinTypeMapper {
     }
 
     @NotNull
-    public Type mapOwner(@NotNull DeclarationDescriptor descriptor, boolean publicFacade) {
+    private Type mapOwner(@NotNull DeclarationDescriptor descriptor, boolean publicFacade) {
         if (isLocalFunction(descriptor)) {
             return asmTypeForAnonymousClass(bindingContext, (FunctionDescriptor) descriptor);
         }
@@ -197,6 +198,10 @@ public class KotlinTypeMapper {
             if (facadeFqName != null) return facadeFqName;
         }
 
+        if (descriptor.getContainingDeclaration() instanceof IrBuiltinsPackageFragmentDescriptor) {
+            return descriptor.getContainingDeclaration().getName().asString();
+        }
+
         throw new RuntimeException("Could not find package member for " + descriptor +
                                    " in package fragment " + descriptor.getContainingDeclaration());
     }
@@ -211,47 +216,49 @@ public class KotlinTypeMapper {
         private final ClassId facadeClassId;
         private final ClassId implClassId;
 
-        public ContainingClassesInfo(ClassId facadeClassId, ClassId implClassId) {
+        public ContainingClassesInfo(@NotNull ClassId facadeClassId, @NotNull ClassId implClassId) {
             this.facadeClassId = facadeClassId;
             this.implClassId = implClassId;
         }
 
+        @NotNull
         public ClassId getFacadeClassId() {
             return facadeClassId;
         }
 
+        @NotNull
         public ClassId getImplClassId() {
             return implClassId;
         }
 
-        private static @Nullable ContainingClassesInfo forPackageMemberOrNull(
+        @Nullable
+        private static ContainingClassesInfo forPackageMember(
                 @NotNull FqName packageFqName,
-                @Nullable String facadeClassName,
-                @Nullable String implClassName
+                @NotNull String facadeClassName,
+                @NotNull String implClassName
         ) {
-            if (facadeClassName == null || implClassName == null) {
-                return null;
-            }
             return new ContainingClassesInfo(ClassId.topLevel(packageFqName.child(Name.identifier(facadeClassName))),
                                              ClassId.topLevel(packageFqName.child(Name.identifier(implClassName))));
         }
 
-        private static @Nullable ContainingClassesInfo forClassMemberOrNull(@Nullable ClassId classId) {
-            if (classId == null) {
-                return null;
-            }
+        @NotNull
+        private static ContainingClassesInfo forClassMember(@NotNull ClassId classId) {
             return new ContainingClassesInfo(classId, classId);
         }
     }
 
-    public ContainingClassesInfo getContainingClassesForDeserializedCallable(DeserializedCallableMemberDescriptor deserializedDescriptor) {
+    @NotNull
+    public static ContainingClassesInfo getContainingClassesForDeserializedCallable(
+            @NotNull DeserializedCallableMemberDescriptor deserializedDescriptor
+    ) {
         DeclarationDescriptor parentDeclaration = deserializedDescriptor.getContainingDeclaration();
         ContainingClassesInfo containingClassesInfo;
         if (parentDeclaration instanceof PackageFragmentDescriptor) {
             containingClassesInfo = getPackageMemberContainingClassesInfo(deserializedDescriptor);
-        } else {
+        }
+        else {
             ClassId classId = getContainerClassIdForClassDescriptor((ClassDescriptor) parentDeclaration);
-            containingClassesInfo = ContainingClassesInfo.forClassMemberOrNull(classId);
+            containingClassesInfo = ContainingClassesInfo.forClassMember(classId);
         }
         if (containingClassesInfo == null) {
             throw new IllegalStateException("Couldn't find container for " + deserializedDescriptor.getName());
@@ -259,18 +266,22 @@ public class KotlinTypeMapper {
         return containingClassesInfo;
     }
 
-    private static ClassId getContainerClassIdForClassDescriptor(ClassDescriptor classDescriptor) {
+    @NotNull
+    private static ClassId getContainerClassIdForClassDescriptor(@NotNull ClassDescriptor classDescriptor) {
         ClassId classId = DescriptorUtilsKt.getClassId(classDescriptor);
+        assert classId != null : "Deserialized class should have a ClassId: " + classDescriptor;
+
         if (isInterface(classDescriptor)) {
             FqName relativeClassName = classId.getRelativeClassName();
             //TODO test nested trait fun inlining
-            classId = new ClassId(classId.getPackageFqName(), Name.identifier(relativeClassName.shortName().asString() + JvmAbi.DEFAULT_IMPLS_SUFFIX));
+            return new ClassId(classId.getPackageFqName(), Name.identifier(relativeClassName.shortName().asString() + JvmAbi.DEFAULT_IMPLS_SUFFIX));
         }
+
         return classId;
     }
 
     @Nullable
-    private String getPackageMemberOwnerInternalName(@NotNull DeserializedCallableMemberDescriptor descriptor, boolean publicFacade) {
+    private static String getPackageMemberOwnerInternalName(@NotNull DeserializedCallableMemberDescriptor descriptor, boolean publicFacade) {
         DeclarationDescriptor containingDeclaration = descriptor.getContainingDeclaration();
         assert containingDeclaration instanceof PackageFragmentDescriptor : "Not a top-level member: " + descriptor;
 
@@ -287,16 +298,9 @@ public class KotlinTypeMapper {
     private static final ClassId FAKE_CLASS_ID_FOR_BUILTINS = ClassId.topLevel(new FqName("kotlin.KotlinPackage"));
 
     @Nullable
-    private ContainingClassesInfo getPackageMemberContainingClassesInfo(@NotNull DeserializedCallableMemberDescriptor descriptor) {
-        // XXX This method is a dirty hack.
-        // We need some safe, concise way to identify multifile facade and multifile part
-        // from a deserialized package member descriptor.
+    private static ContainingClassesInfo getPackageMemberContainingClassesInfo(@NotNull DeserializedCallableMemberDescriptor descriptor) {
         DeclarationDescriptor containingDeclaration = descriptor.getContainingDeclaration();
-        assert containingDeclaration instanceof PackageFragmentDescriptor
-                : "Package member expected, got " + descriptor + " in " + containingDeclaration;
-        PackageFragmentDescriptor packageFragmentDescriptor = (PackageFragmentDescriptor) containingDeclaration;
-
-        if (packageFragmentDescriptor instanceof BuiltInsPackageFragment) {
+        if (containingDeclaration instanceof BuiltInsPackageFragment) {
             return new ContainingClassesInfo(FAKE_CLASS_ID_FOR_BUILTINS, FAKE_CLASS_ID_FOR_BUILTINS);
         }
 
@@ -306,31 +310,21 @@ public class KotlinTypeMapper {
 
         String facadeSimpleName;
 
-        if (packageFragmentDescriptor instanceof LazyJavaPackageFragment) {
-            facadeSimpleName = ((LazyJavaPackageFragment) packageFragmentDescriptor).getFacadeSimpleNameForPartSimpleName(
-                    implClassName.asString()
-            );
+        if (containingDeclaration instanceof LazyJavaPackageFragment) {
+            facadeSimpleName = ((LazyJavaPackageFragment) containingDeclaration).getFacadeSimpleNameForPartSimpleName(implSimpleName);
+            if (facadeSimpleName == null) return null;
         }
-        else if (packageFragmentDescriptor instanceof IncrementalPackageFragmentProvider.IncrementalPackageFragment) {
-            assert incrementalCache != null
-                    : "IncrementalPackageFragment found outside of incremental compilation context " +
-                      "for " + descriptor + " in package " + packageFragmentDescriptor;
-
-            String implClassInternalName = internalNameByFqNameWithoutInnerClasses(
-                    packageFragmentDescriptor.getFqName().child(implClassName));
-            String facadeClassInternalName = incrementalCache.getMultifileFacade(implClassInternalName);
-            if (facadeClassInternalName == null) {
-                facadeSimpleName = implClassName.asString();
-            }
-            else {
-                facadeSimpleName = getSimpleInternalName(facadeClassInternalName);
-            }
+        else if (containingDeclaration instanceof IncrementalMultifileClassPackageFragment) {
+            facadeSimpleName = ((IncrementalMultifileClassPackageFragment) containingDeclaration).getMultifileClassName().asString();
         }
         else {
             throw new AssertionError("Unexpected package fragment for " + descriptor + ": " +
-                                     packageFragmentDescriptor + " (" + packageFragmentDescriptor.getClass().getSimpleName() + ")");
+                                     containingDeclaration + " (" + containingDeclaration.getClass().getSimpleName() + ")");
         }
-        return ContainingClassesInfo.forPackageMemberOrNull(packageFragmentDescriptor.getFqName(), facadeSimpleName, implSimpleName);
+
+        return ContainingClassesInfo.forPackageMember(
+                ((PackageFragmentDescriptor) containingDeclaration).getFqName(), facadeSimpleName, implSimpleName
+        );
     }
 
     @NotNull
@@ -615,11 +609,46 @@ public class KotlinTypeMapper {
         return Variance.OUT_VARIANCE;
     }
 
+    //NB: similar platform agnostic code in DescriptorUtils.unwrapFakeOverride
+    private FunctionDescriptor findSuperDeclaration(@NotNull FunctionDescriptor descriptor, boolean isSuperCall) {
+        while (descriptor.getKind() == CallableMemberDescriptor.Kind.FAKE_OVERRIDE) {
+            Collection<? extends FunctionDescriptor> overridden = descriptor.getOverriddenDescriptors();
+            if (overridden.isEmpty()) {
+                throw new IllegalStateException("Fake override should have at least one overridden descriptor: " + descriptor);
+            }
+
+            FunctionDescriptor classCallable = null;
+            for (FunctionDescriptor overriddenFunction : overridden) {
+                if (!isInterface(overriddenFunction.getContainingDeclaration())) {
+                    classCallable = overriddenFunction;
+                    break;
+                }
+            }
+
+            if (classCallable != null) {
+                //prefer class callable cause of else branch
+                descriptor = classCallable;
+                continue;
+            }
+            else if (isSuperCall && !isJvm8Target && !isInterface(descriptor.getContainingDeclaration())) {
+                //Don't unwrap fake overrides from class to interface cause substituted override would be implicitly generated for target 1.6
+                return descriptor;
+            }
+
+            descriptor = overridden.iterator().next();
+        }
+        return descriptor;
+    }
+
     @NotNull
     public CallableMethod mapToCallableMethod(@NotNull FunctionDescriptor descriptor, boolean superCall) {
-        if (descriptor instanceof ConstructorDescriptor) {
+        if (descriptor instanceof TypeAliasConstructorDescriptor) {
+            return mapToCallableMethod(((TypeAliasConstructorDescriptor) descriptor).getUnderlyingConstructorDescriptor(), superCall);
+        }
+
+        if (descriptor instanceof ClassConstructorDescriptor) {
             JvmMethodSignature method = mapSignatureSkipGeneric(descriptor);
-            Type owner = mapClass(((ConstructorDescriptor) descriptor).getContainingDeclaration());
+            Type owner = mapClass(((ClassConstructorDescriptor) descriptor).getContainingDeclaration());
             String defaultImplDesc = mapDefaultMethod(descriptor, OwnerKind.IMPLEMENTATION).getDescriptor();
             return new CallableMethod(owner, owner, defaultImplDesc, method, INVOKESPECIAL, null, null, null);
         }
@@ -633,7 +662,7 @@ public class KotlinTypeMapper {
 
         DeclarationDescriptor functionParent = descriptor.getOriginal().getContainingDeclaration();
 
-        FunctionDescriptor functionDescriptor = unwrapFakeOverride(descriptor.getOriginal());
+        FunctionDescriptor functionDescriptor = findSuperDeclaration(descriptor.getOriginal(), superCall);
 
         JvmMethodSignature signature;
         Type owner;
@@ -655,11 +684,13 @@ public class KotlinTypeMapper {
 
             baseMethodDescriptor = findBaseDeclaration(functionDescriptor).getOriginal();
             ClassDescriptor ownerForDefault = (ClassDescriptor) baseMethodDescriptor.getContainingDeclaration();
-            ownerForDefaultImpl = isJvmInterface(ownerForDefault) ? mapDefaultImpls(ownerForDefault) : mapClass(ownerForDefault);
+            ownerForDefaultImpl =
+                    isJvmInterface(ownerForDefault) && !isJvm8Interface(ownerForDefault) ?
+                    mapDefaultImpls(ownerForDefault) : mapClass(ownerForDefault);
 
             if (isInterface && (superCall || descriptor.getVisibility() == Visibilities.PRIVATE || isAccessor(descriptor))) {
                 thisClass = mapClass(currentOwner);
-                if (declarationOwner instanceof JavaClassDescriptor) {
+                if (declarationOwner instanceof JavaClassDescriptor || isJvm8Interface(declarationOwner)) {
                     invokeOpcode = INVOKESPECIAL;
                     signature = mapSignatureSkipGeneric(functionDescriptor);
                     owner = thisClass;
@@ -674,7 +705,7 @@ public class KotlinTypeMapper {
                 boolean isStaticInvocation = (isStaticDeclaration(functionDescriptor) &&
                                               !(functionDescriptor instanceof ImportedFromObjectCallableDescriptor)) ||
                                              isStaticAccessor(functionDescriptor) ||
-                                             AnnotationUtilKt.isPlatformStaticInObjectOrClass(functionDescriptor);
+                                             CodegenUtilKt.isJvmStaticInObjectOrClass(functionDescriptor);
                 if (isStaticInvocation) {
                     invokeOpcode = INVOKESTATIC;
                 }
@@ -687,7 +718,7 @@ public class KotlinTypeMapper {
                 }
 
                 FunctionDescriptor overriddenSpecialBuiltinFunction =
-                        SpecialBuiltinMembers.<FunctionDescriptor>getOverriddenBuiltinReflectingJvmDescriptor(functionDescriptor.getOriginal());
+                        SpecialBuiltinMembers.getOverriddenBuiltinReflectingJvmDescriptor(functionDescriptor.getOriginal());
                 FunctionDescriptor functionToCall = overriddenSpecialBuiltinFunction != null && !superCall
                                                     ? overriddenSpecialBuiltinFunction.getOriginal()
                                                     : functionDescriptor.getOriginal();
@@ -736,6 +767,10 @@ public class KotlinTypeMapper {
         return new CallableMethod(
                 owner, ownerForDefaultImpl, defaultImplDesc, signature, invokeOpcode,
                 thisClass, receiverParameterType, calleeType);
+    }
+
+    private boolean isJvm8Interface(@NotNull ClassDescriptor ownerForDefault) {
+        return isJvmInterface(ownerForDefault) && JvmCodegenUtil.isJvm8Interface(ownerForDefault, isJvm8Target);
     }
 
     public static boolean isAccessor(@NotNull CallableMemberDescriptor descriptor) {
@@ -848,12 +883,8 @@ public class KotlinTypeMapper {
 
         if (DescriptorUtils.isTopLevelDeclaration(descriptor)) {
             if (Visibilities.isPrivate(descriptor.getVisibility()) && !(descriptor instanceof ConstructorDescriptor) && !"<clinit>".equals(name)) {
-                KtFile containingFile = DescriptorToSourceUtils.getContainingFile(descriptor);
-                assert containingFile != null : "Private descriptor accessed outside of corresponding file scope: " + descriptor;
-                JvmFileClassInfo fileClassInfo = JvmFileClassUtil.getFileClassInfoNoResolve(containingFile);
-                if (fileClassInfo.getWithJvmMultifileClass()) {
-                    return name + "$" + fileClassInfo.getFileClassFqName().shortName().asString();
-                }
+                String partName = getPartSimpleNameForMangling(descriptor);
+                if (partName != null) return name + "$" + partName;
             }
             return name;
         }
@@ -863,6 +894,28 @@ public class KotlinTypeMapper {
         }
 
         return name;
+    }
+
+    @Nullable
+    private String getPartSimpleNameForMangling(@NotNull CallableMemberDescriptor descriptor) {
+        KtFile containingFile = DescriptorToSourceUtils.getContainingFile(descriptor);
+        if (containingFile != null) {
+            JvmFileClassInfo fileClassInfo = JvmFileClassUtil.getFileClassInfoNoResolve(containingFile);
+            if (fileClassInfo.getWithJvmMultifileClass()) {
+                return fileClassInfo.getFileClassFqName().shortName().asString();
+            }
+            return null;
+        }
+
+        descriptor = getDirectMember(descriptor);
+        assert descriptor instanceof DeserializedCallableMemberDescriptor :
+                "Descriptor without sources should be instance of DeserializedCallableMemberDescriptor, but: " +
+                descriptor;
+        ContainingClassesInfo containingClassesInfo =
+                getContainingClassesForDeserializedCallable((DeserializedCallableMemberDescriptor) descriptor);
+        String facadeShortName = containingClassesInfo.getFacadeClassId().getShortClassName().asString();
+        String implShortName = containingClassesInfo.getImplClassId().getShortClassName().asString();
+        return !facadeShortName.equals(implShortName) ? implShortName : null;
     }
 
     @NotNull
@@ -922,6 +975,9 @@ public class KotlinTypeMapper {
         if (f instanceof FunctionImportedFromObject) {
             return mapSignature(((FunctionImportedFromObject) f).getCallableFromObject(), kind, skipGenericSignature);
         }
+        else if (f instanceof TypeAliasConstructorDescriptor) {
+            return mapSignature(((TypeAliasConstructorDescriptor) f).getUnderlyingConstructorDescriptor(), kind, valueParameters, skipGenericSignature);
+        }
 
         checkOwnerCompatibility(f);
 
@@ -929,9 +985,9 @@ public class KotlinTypeMapper {
                                  ? new JvmSignatureWriter()
                                  : new BothSignatureWriter(BothSignatureWriter.Mode.METHOD);
 
-        if (f instanceof ConstructorDescriptor) {
+        if (f instanceof ClassConstructorDescriptor) {
             sw.writeParametersStart();
-            writeAdditionalConstructorParameters((ConstructorDescriptor) f, sw);
+            writeAdditionalConstructorParameters((ClassConstructorDescriptor) f, sw);
 
             for (ValueParameterDescriptor parameter : valueParameters) {
                 writeParameter(sw, parameter.getType(), f);
@@ -1075,7 +1131,7 @@ public class KotlinTypeMapper {
 
         for (FunctionDescriptor overridden : getAllOverriddenDescriptors(descriptor)) {
             //noinspection ConstantConditions
-            if (!KotlinBuiltIns.isPrimitiveType(overridden.getOriginal().getReturnType())) return true;
+            if (!KotlinBuiltIns.isPrimitiveType(overridden.getReturnType())) return true;
         }
 
         return false;
@@ -1109,7 +1165,7 @@ public class KotlinTypeMapper {
     }
 
     private void writeFormalTypeParameter(@NotNull TypeParameterDescriptor typeParameterDescriptor, @NotNull JvmSignatureWriter sw) {
-        if (classBuilderMode != ClassBuilderMode.FULL && typeParameterDescriptor.getName().isSpecial()) {
+        if (!classBuilderMode.generateBodies && typeParameterDescriptor.getName().isSpecial()) {
             // If a type parameter has no name, the code below fails, but it should recover in case of light classes
             return;
         }
@@ -1211,11 +1267,14 @@ public class KotlinTypeMapper {
         sw.writeParameterTypeEnd();
     }
 
-    private void writeAdditionalConstructorParameters(@NotNull ConstructorDescriptor descriptor, @NotNull JvmSignatureWriter sw) {
+    private void writeAdditionalConstructorParameters(@NotNull ClassConstructorDescriptor descriptor, @NotNull JvmSignatureWriter sw) {
+        boolean isSynthesized = descriptor.getKind() == CallableMemberDescriptor.Kind.SYNTHESIZED;
+        //if (isSynthesized) return;
+
         MutableClosure closure = bindingContext.get(CodegenBinding.CLOSURE, descriptor.getContainingDeclaration());
 
         ClassDescriptor captureThis = getDispatchReceiverParameterForConstructorCall(descriptor, closure);
-        if (captureThis != null) {
+        if (!isSynthesized && captureThis != null) {
             writeParameter(sw, JvmMethodParameterKind.OUTER, captureThis.getDefaultType(), descriptor);
         }
 
@@ -1225,11 +1284,16 @@ public class KotlinTypeMapper {
         }
 
         ClassDescriptor containingDeclaration = descriptor.getContainingDeclaration();
-        if (containingDeclaration.getKind() == ClassKind.ENUM_CLASS || containingDeclaration.getKind() == ClassKind.ENUM_ENTRY) {
-            writeParameter(
-                    sw, JvmMethodParameterKind.ENUM_NAME_OR_ORDINAL, DescriptorUtilsKt.getBuiltIns(descriptor).getStringType(), descriptor);
-            writeParameter(
-                    sw, JvmMethodParameterKind.ENUM_NAME_OR_ORDINAL, DescriptorUtilsKt.getBuiltIns(descriptor).getIntType(), descriptor);
+
+        if (!isSynthesized) {
+            if (containingDeclaration.getKind() == ClassKind.ENUM_CLASS || containingDeclaration.getKind() == ClassKind.ENUM_ENTRY) {
+                writeParameter(
+                        sw, JvmMethodParameterKind.ENUM_NAME_OR_ORDINAL, DescriptorUtilsKt.getBuiltIns(descriptor).getStringType(),
+                        descriptor);
+                writeParameter(
+                        sw, JvmMethodParameterKind.ENUM_NAME_OR_ORDINAL, DescriptorUtilsKt.getBuiltIns(descriptor).getIntType(),
+                        descriptor);
+            }
         }
 
         if (closure == null) return;
@@ -1259,7 +1323,7 @@ public class KotlinTypeMapper {
 
         // We may generate a slightly wrong signature for a local class / anonymous object in light classes mode but we don't care,
         // because such classes are not accessible from the outside world
-        if (classBuilderMode == ClassBuilderMode.FULL) {
+        if (classBuilderMode.generateBodies) {
             ResolvedCall<ConstructorDescriptor> superCall = findFirstDelegatingSuperCall(descriptor);
             if (superCall == null) return;
             writeSuperConstructorCallParameters(sw, descriptor, superCall, captureThis != null);
@@ -1268,7 +1332,7 @@ public class KotlinTypeMapper {
 
     private void writeSuperConstructorCallParameters(
             @NotNull JvmSignatureWriter sw,
-            @NotNull ConstructorDescriptor descriptor,
+            @NotNull ClassConstructorDescriptor descriptor,
             @NotNull ResolvedCall<ConstructorDescriptor> superCall,
             boolean hasOuter
     ) {
@@ -1309,12 +1373,12 @@ public class KotlinTypeMapper {
 
     @Nullable
     private ResolvedCall<ConstructorDescriptor> findFirstDelegatingSuperCall(@NotNull ConstructorDescriptor descriptor) {
-        ClassDescriptor classDescriptor = descriptor.getContainingDeclaration();
+        ClassifierDescriptorWithTypeParameters constructorOwner = descriptor.getContainingDeclaration();
         while (true) {
             ResolvedCall<ConstructorDescriptor> next = getDelegationConstructorCall(bindingContext, descriptor);
             if (next == null) return null;
             descriptor = next.getResultingDescriptor();
-            if (descriptor.getContainingDeclaration() != classDescriptor) return next;
+            if (descriptor.getContainingDeclaration() != constructorOwner) return next;
         }
     }
 

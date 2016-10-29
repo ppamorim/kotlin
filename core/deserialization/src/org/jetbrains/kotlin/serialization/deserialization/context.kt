@@ -28,6 +28,7 @@ import org.jetbrains.kotlin.storage.StorageManager
 class DeserializationComponents(
         val storageManager: StorageManager,
         val moduleDescriptor: ModuleDescriptor,
+        val configuration: DeserializationConfiguration,
         val classDataFinder: ClassDataFinder,
         val annotationAndConstantLoader: AnnotationAndConstantLoader<AnnotationDescriptor, ConstantValue<*>, AnnotationWithTarget>,
         val packageFragmentProvider: PackageFragmentProvider,
@@ -35,7 +36,7 @@ class DeserializationComponents(
         val errorReporter: ErrorReporter,
         val lookupTracker: LookupTracker,
         val flexibleTypeDeserializer: FlexibleTypeDeserializer,
-        val fictitiousClassDescriptorFactory: ClassDescriptorFactory,
+        val fictitiousClassDescriptorFactories: Iterable<ClassDescriptorFactory>,
         val notFoundClasses: NotFoundClasses,
         val additionalClassPartsProvider: AdditionalClassPartsProvider = AdditionalClassPartsProvider.None,
         val platformDependentDeclarationFilter: PlatformDependentDeclarationFilter = PlatformDependentDeclarationFilter.All

@@ -24,12 +24,10 @@ import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.MemberComparator
+import org.jetbrains.kotlin.resolve.OverridingUtil
 import org.jetbrains.kotlin.resolve.calls.callUtil.getResolvedCall
-import org.jetbrains.kotlin.resolve.descriptorUtil.builtIns
 import org.jetbrains.kotlin.types.KotlinType
-import org.jetbrains.kotlin.types.checker.KotlinTypeChecker
 import org.jetbrains.kotlin.types.isDynamic
-import org.jetbrains.kotlin.types.typeUtil.makeNullable
 import org.jetbrains.kotlin.utils.keysToMapExceptNulls
 
 object CodegenUtil {
@@ -53,22 +51,16 @@ object CodegenUtil {
                 .sortedWith(MemberComparator.INSTANCE)
                 .keysToMapExceptNulls { delegatingMember ->
                     val actualDelegates = DescriptorUtils.getAllOverriddenDescriptors(delegatingMember)
-                            .mapNotNull { overriddenDescriptor ->
-                                if (overriddenDescriptor.containingDeclaration == toInterface) {
-                                    val scope = (delegateExpressionType ?: toInterface.defaultType).memberScope
-                                    val name = overriddenDescriptor.name
+                            .filter { it.containingDeclaration == toInterface }
+                            .map { overriddenDescriptor ->
+                                val scope = (delegateExpressionType ?: toInterface.defaultType).memberScope
+                                val name = overriddenDescriptor.name
 
-                                    // this is the actual member of delegateExpressionType that we are delegating to
-                                    (scope.getContributedFunctions(name, NoLookupLocation.FROM_BACKEND) +
-                                     scope.getContributedVariables(name, NoLookupLocation.FROM_BACKEND))
-                                            .firstOrNull {
-                                                (listOf(it) + DescriptorUtils.getAllOverriddenDescriptors(it))
-                                                        .map(CallableMemberDescriptor::getOriginal)
-                                                        .contains(overriddenDescriptor.original)
-                                            }
-                                }
-                                else null
-                            }
+                                // this is the actual member of delegateExpressionType that we are delegating to
+                                (scope.getContributedFunctions(name, NoLookupLocation.FROM_BACKEND) +
+                                 scope.getContributedVariables(name, NoLookupLocation.FROM_BACKEND))
+                                        .firstOrNull { it == overriddenDescriptor || OverridingUtil.overrides(it, overriddenDescriptor) }
+                             }
 
                     assert(actualDelegates.size <= 1) { "Many delegates found for $delegatingMember: $actualDelegates" }
 
@@ -106,7 +98,9 @@ object CodegenUtil {
             if (declaration !is CallableMemberDescriptor) continue
 
             val traitMember = findInterfaceImplementation(declaration)
-            if (traitMember == null || Visibilities.isPrivate(traitMember.visibility)) continue
+            if (traitMember == null ||
+                    Visibilities.isPrivate(traitMember.visibility) ||
+                    traitMember.visibility == Visibilities.INVISIBLE_FAKE) continue
 
             assert(traitMember.modality !== Modality.ABSTRACT) { "Cannot delegate to abstract trait method: $declaration" }
 
@@ -151,15 +145,6 @@ object CodegenUtil {
 
         return superType.constructor.declarationDescriptor as? ClassDescriptor
                ?: error("ClassDescriptor of superType should not be null: ${specifier.text}")
-    }
-
-    @JvmStatic
-    fun isEnumValueOfMethod(functionDescriptor: FunctionDescriptor): Boolean {
-        val methodTypeParameters = functionDescriptor.valueParameters
-        val nullableString = functionDescriptor.builtIns.stringType.makeNullable()
-        return DescriptorUtils.ENUM_VALUE_OF == functionDescriptor.name
-               && methodTypeParameters.size == 1
-               && KotlinTypeChecker.DEFAULT.isSubtypeOf(methodTypeParameters[0].type, nullableString)
     }
 
     @JvmStatic

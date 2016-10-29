@@ -1,4 +1,5 @@
 <project name="Kotlin" default="dist" xmlns:if="ant:if" xmlns:unless="ant:unless">
+    <import file="common.xml" optional="false"/>
     <property file="resources/kotlinManifest.properties"/>
 
     <!-- Set to false to disable proguard run on kotlin-compiler.jar. Speeds up the build -->
@@ -15,10 +16,9 @@
     <property name="bootstrap.compiler.home" value="${bootstrap.home}/Kotlin/kotlinc"/>
     <property name="bootstrap.runtime" value="${bootstrap.compiler.home}/lib/kotlin-runtime.jar"/>
     <property name="bootstrap.reflect" value="${bootstrap.compiler.home}/lib/kotlin-reflect.jar"/>
+    <property name="bootstrap.script.runtime" value="${bootstrap.compiler.home}/lib/kotlin-script-runtime.jar"/>
     <property name="bootstrap.kotlin.test" value="${bootstrap.compiler.home}/lib/kotlin-test.jar" />
 
-    <property name="output" value="${basedir}/dist"/>
-    <property name="js.stdlib.output.dir" value="${output}/js"/>
     <property name="intermediate-sources" value="out/src" />
     <property name="kotlin-home" value="${output}/kotlinc"/>
     <property name="build.number" value="snapshot"/>
@@ -29,8 +29,6 @@
     <property name="javax.inject.jar" value="${basedir}/lib/javax.inject.jar"/>
 
     <property name="java.target" value="1.6"/>
-
-    <property name="dependencies.dir" value="${basedir}/dependencies"/>
 
     <condition property="bootstrap.or.local.build" value="true">
         <or>
@@ -57,8 +55,8 @@
     little to no differences between the new and the newest runtime.
     -->
     <condition property="compiler.manifest.class.path"
-               value="kotlin-runtime-internal-bootstrap.jar kotlin-reflect-internal-bootstrap.jar"
-               else="kotlin-runtime.jar kotlin-reflect.jar">
+               value="kotlin-runtime-internal-bootstrap.jar kotlin-reflect-internal-bootstrap.jar kotlin-script-runtime-internal-bootstrap.jar"
+               else="kotlin-runtime.jar kotlin-reflect.jar kotlin-script-runtime.jar">
         <istrue value="${bootstrap.or.local.build}"/>
     </condition>
 
@@ -66,13 +64,14 @@
         <file file="${bootstrap.runtime}"/>
         <file file="${bootstrap.kotlin.test}" />
         <file file="${bootstrap.reflect}"/>
+        <file file="${bootstrap.script.runtime}"/>
         <fileset dir="${idea.sdk}" includes="core/*.jar"/>
         <pathelement location="${protobuf.jar}"/>
 
         <fileset dir="${basedir}/lib" includes="**/*.jar"/>
-        <fileset dir="${dependencies.dir}" includes="jansi.jar"/>
-        <fileset dir="${dependencies.dir}" includes="jline.jar"/>
-        <fileset dir="${dependencies.dir}" includes="cli-parser-1.1.2.jar"/>
+        <fileset dir="${dependencies}" includes="jansi.jar"/>
+        <fileset dir="${dependencies}" includes="jline.jar"/>
+        <fileset dir="${dependencies}" includes="cli-parser-1.1.2.jar"/>
         <fileset dir="${basedir}/ideaSDK/jps" includes="jps-model.jar"/>
     </path>
 
@@ -92,6 +91,10 @@
         <include name="core/util.runtime/src"/>
         <include name="compiler/backend/src"/>
         <include name="compiler/backend-common/src"/>
+        <include name="compiler/ir/backend.common/src"/>
+        <include name="compiler/ir/backend.jvm/src"/>
+        <include name="compiler/ir/ir.psi2ir/src"/>
+        <include name="compiler/ir/ir.tree/src"/>
         <include name="compiler/builtins-serializer/src"/>
         <include name="compiler/cli/src"/>
         <include name="compiler/cli/cli-common/src"/>
@@ -127,10 +130,15 @@
         <include name="frontend.java/**"/>
         <include name="backend/**"/>
         <include name="backend-common/**"/>
+        <include name="backend.common/**"/>
+        <include name="backend.jvm/**"/>
+        <include name="ir.psi2ir/**"/>
+        <include name="ir.tree/**"/>
         <include name="cli/**"/>
         <include name="cli-common/**"/>
         <include name="conditional-preprocessor/**"/>
         <include name="daemon/**"/>
+        <include name="daemon-common/**"/>
         <include name="util/**"/>
         <include name="util.runtime/**"/>
         <include name="light-classes/**"/>
@@ -189,6 +197,7 @@
         <sequential if:true="${bootstrap.or.local.build}">
             <copy file="${bootstrap.runtime}" tofile="${kotlin-home}/lib/kotlin-runtime-internal-bootstrap.jar"/>
             <copy file="${bootstrap.reflect}" tofile="${kotlin-home}/lib/kotlin-reflect-internal-bootstrap.jar"/>
+            <copy file="${bootstrap.script.runtime}" tofile="${kotlin-home}/lib/kotlin-script-runtime-internal-bootstrap.jar"/>
             <copy file="${bootstrap.kotlin.test}" tofile="${kotlin-home}/lib/kotlin-test-internal-bootstrap.jar" failonerror="false"/>
             <jar destfile="${kotlin-home}/lib/kotlin-reflect-internal-bootstrap.jar" update="true">
                 <manifest>
@@ -205,6 +214,7 @@
         <sequential unless:true="${bootstrap.or.local.build}">
             <copy file="${bootstrap.runtime}" todir="${kotlin-home}/lib"/>
             <copy file="${bootstrap.reflect}" todir="${kotlin-home}/lib"/>
+            <copy file="${bootstrap.script.runtime}" todir="${kotlin-home}/lib"/>
             <copy file="${bootstrap.kotlin.test}" todir="${kotlin-home}/lib"/>
         </sequential>
     </target>
@@ -336,7 +346,7 @@
 
         <taskdef name="closure-compiler"
                  classname="com.google.javascript.jscomp.ant.CompileTask"
-                 classpath="${dependencies.dir}/closure-compiler.jar"/>
+                 classpath="${dependencies}/closure-compiler.jar"/>
 
         <closure-compiler
             compilationLevel="${compilationLevel}"
@@ -349,7 +359,6 @@
             <sources dir="${stdlib.js.dir}">
                 <file name="kotlin_lib_ecma5.js"/>
                 <file name="kotlin_lib.js"/>
-                <file name="maps.js"/>
                 <file name="long.js"/>
             </sources>
 
@@ -506,13 +515,6 @@
         <attribute name="compress" default="true"/>
 
         <sequential>
-            <local name="idea.core.uberjar.exists"/>
-            <available file="${dependencies.dir}/idea/idea-core-all.jar" property="idea.core.uberjar.exists"/>
-            <!-- TODO: move this jar creation to update_dependencies.xml eventually -->
-            <jar jarfile="${dependencies.dir}/idea/idea-core-all.jar" unless:true="${idea.core.uberjar.exists}">
-                <zipgroupfileset dir="${idea.sdk}/core" includes="*.jar" excludes="util.jar"/>
-            </jar>
-
             <jar jarfile="@{jarfile}" compress="@{compress}" duplicate="preserve">
                 <fileset dir="${output}/classes/compiler"/>
                 <fileset dir="${output}/builtins">
@@ -531,12 +533,12 @@
                 </fileset>
 
                 <zipgroupfileset dir="${basedir}/lib" includes="*.jar"/>
-                <zipfileset src="${dependencies.dir}/idea/idea-core-all.jar" excludes="META-INF/INDEX.LIST"/>
+                <zipgroupfileset dir="${basedir}/ideaSDK/core" includes="*.jar" excludes="util.jar"/>
                 <zipfileset src="${idea.sdk}/lib/jna-platform.jar"/>
                 <zipfileset src="${idea.sdk}/lib/oromatcher.jar"/>
                 <zipfileset src="${idea.sdk}/jps/jps-model.jar"/>
-                <zipfileset src="${dependencies.dir}/jline.jar"/>
-                <zipfileset src="${dependencies.dir}/cli-parser-1.1.2.jar"/>
+                <zipfileset src="${dependencies}/jline.jar"/>
+                <zipfileset src="${dependencies}/cli-parser-1.1.2.jar"/>
                 <zipfileset src="${protobuf.jar}"/>
 
                 <manifest>
@@ -569,8 +571,8 @@
     <target name="compiler">
         <taskdef resource="proguard/ant/task.properties">
             <classpath>
-                <pathelement path="${dependencies.dir}/proguard.jar"/>
-                <pathelement path="${dependencies.dir}/proguard-anttask.jar"/>
+                <pathelement path="${dependencies}/proguard.jar"/>
+                <pathelement path="${dependencies}/proguard-anttask.jar"/>
             </classpath>
         </taskdef>
 
@@ -619,6 +621,9 @@
             <zipfileset src="${bootstrap.reflect}">
                 <patternset refid="lib.metainf.patternset"/>
             </zipfileset>
+            <zipfileset src="${bootstrap.script.runtime}">
+                <patternset refid="lib.metainf.patternset"/>
+            </zipfileset>
 
             <manifest>
                 <attribute name="Built-By" value="${manifest.impl.vendor}"/>
@@ -647,6 +652,7 @@
             <classpath>
                 <pathelement path="${bootstrap.runtime}"/>
                 <pathelement path="${bootstrap.reflect}"/>
+                <pathelement path="${bootstrap.script.runtime}"/>
                 <pathelement path="${idea.sdk}/lib/util.jar"/>
                 <pathelement path="${kotlin-home}/lib/kotlin-compiler.jar"/>
             </classpath>
@@ -690,6 +696,7 @@
             <classpath>
                 <pathelement path="${bootstrap.runtime}"/>
                 <pathelement path="${bootstrap.reflect}"/>
+                <pathelement path="${bootstrap.script.runtime}"/>
                 <pathelement path="${bootstrap.kotlin.test}"/>
                 <pathelement path="${protobuf.jar}"/>
                 <pathelement path="${idea.sdk}/lib/junit-4.12.jar"/>
@@ -724,13 +731,13 @@
             </src>
             <classpath>
                 <pathelement path="${kotlin-home}/lib/kotlin-compiler.jar"/>
-                <pathelement path="${dependencies.dir}/native-platform-uberjar.jar"/>
+                <pathelement path="${dependencies}/native-platform-uberjar.jar"/>
             </classpath>
         </kotlinc>
 
         <jar destfile="${kotlin-home}/lib/kotlin-daemon-client.jar">
             <fileset dir="${output}/classes/daemon-client"/>
-            <zipfileset src="${dependencies.dir}/native-platform-uberjar.jar" includes="**" />
+            <zipfileset src="${dependencies}/native-platform-uberjar.jar" includes="**" />
             <zipfileset file="${kotlin-home}/build.txt" prefix="META-INF"/>
 
             <manifest>
@@ -738,6 +745,20 @@
 
                 <attribute name="Implementation-Vendor" value="${manifest.impl.vendor}"/>
                 <attribute name="Implementation-Title" value="${manifest.impl.title.kotlin.daemon-client}"/>
+                <attribute name="Implementation-Version" value="${build.number}"/>
+            </manifest>
+        </jar>
+
+        <jar jarfile="${output}/kotlin-daemon-client-sources.jar">
+            <fileset dir="compiler/daemon/daemon-common/src"/>
+            <fileset dir="compiler/daemon/daemon-client/src"/>
+            <zipfileset file="${kotlin-home}/build.txt" prefix="META-INF"/>
+
+            <manifest>
+                <attribute name="Built-By" value="${manifest.impl.vendor}"/>
+
+                <attribute name="Implementation-Vendor" value="${manifest.impl.vendor}"/>
+                <attribute name="Implementation-Title" value="${manifest.impl.title.kotlin.daemon.client.sources}"/>
                 <attribute name="Implementation-Version" value="${build.number}"/>
             </manifest>
         </jar>
@@ -805,6 +826,7 @@
                 <pathelement path="${kotlin-home}/lib/kotlin-compiler.jar"/>
                 <pathelement path="${bootstrap.runtime}"/>
                 <pathelement path="${bootstrap.reflect}"/>
+                <pathelement path="${bootstrap.script.runtime}"/>
             </classpath>
         </javac2>
 
@@ -830,7 +852,7 @@
             </src>
             <compilerarg value="-Xlint:all"/>
             <classpath>
-                <pathelement location="${dependencies.dir}/ant-1.8/lib/ant.jar"/>
+                <pathelement location="${dependencies}/ant-1.8/lib/ant.jar"/>
                 <pathelement location="${kotlin-home}/lib/kotlin-preloader.jar"/>
             </classpath>
         </javac2>
@@ -939,8 +961,8 @@
                 <include name="core/runtime.jvm/src"/>
             </src>
             <class-path>
-                <!-- Need something to pass to compiler's "-classpath" here -->
-                <pathelement location="core/builtins/src"/>
+                <!-- TODO: serialize and compile built-ins in one step here instead -->
+                <pathelement path="${output}/builtins"/>
             </class-path>
         </new-kotlinc>
     </target>
@@ -952,6 +974,7 @@
             </src>
             <class-path>
                 <pathelement path="${output}/classes/builtins"/>
+                <pathelement path="${output}/builtins"/>
             </class-path>
         </new-kotlinc>
     </target>
@@ -966,6 +989,7 @@
             <class-path>
                 <pathelement path="${output}/classes/builtins"/>
                 <pathelement path="libraries/lib/junit-4.11.jar"/>
+                <pathelement path="${output}/builtins"/>
             </class-path>
         </new-kotlinc>
 
@@ -990,6 +1014,7 @@
                 <pathelement path="${output}/classes/stdlib"/>
                 <pathelement path="${protobuf-lite.jar}"/>
                 <pathelement path="${javax.inject.jar}"/>
+                <pathelement path="${output}/builtins"/>
             </class-path>
         </new-kotlinc>
     </target>
@@ -1004,6 +1029,7 @@
                 <pathelement path="${output}/classes/stdlib"/>
                 <pathelement path="${output}/classes/core"/>
                 <pathelement path="${protobuf-lite.jar}"/>
+                <pathelement path="${output}/builtins"/>
             </class-path>
         </new-kotlinc>
     </target>
@@ -1038,7 +1064,7 @@
                 <fileset dir="${output}/classes/stdlib"/>
                 <zipfileset dir="${output}/builtins">
                     <include name="kotlin/**"/>
-                    <!-- TODO: load metadata from @KotlinClass annotation in KotlinBuiltIns on JVM and restore this exclusion -->
+                    <!-- TODO: load metadata from @Metadata annotation in KotlinBuiltIns on JVM and restore this exclusion (also below in mock-runtime) -->
                     <!-- exclude name="kotlin/reflect/**"/ -->
                 </zipfileset>
             </jar-content>
@@ -1138,8 +1164,30 @@
         </pack-runtime-jar>
     </target>
 
+    <target name="script-runtime">
+        <new-kotlinc output="${output}/classes/script-runtime" moduleName="kotlin-script-runtime">
+            <src>
+                <include name="core/script.runtime/src"/>
+            </src>
+            <class-path>
+                <pathelement path="${output}/classes/builtins"/>
+                <pathelement path="${output}/builtins"/>
+            </class-path>
+        </new-kotlinc>
+        <pack-runtime-jar jar-name="kotlin-script-runtime.jar" implementation-title="${manifest.impl.title.kotlin.script.runtime}">
+            <jar-content>
+                <fileset dir="${output}/classes/script-runtime"/>
+            </jar-content>
+        </pack-runtime-jar>
+        <pack-runtime-jar jar-name="kotlin-script-runtime-sources.jar" implementation-title="${manifest.impl.title.kotlin.script.runtime.sources}">
+            <jar-content>
+                <fileset dir="${basedir}/core/script.runtime/src" includes="**/*"/>
+            </jar-content>
+        </pack-runtime-jar>
+    </target>
+
     <target name="runtime"
-            depends="builtins,stdlib,kotlin-test,core,reflection,pack-runtime,pack-runtime-sources,mock-runtime-for-test"/>
+            depends="builtins,stdlib,kotlin-test,core,reflection,pack-runtime,pack-runtime-sources,script-runtime,mock-runtime-for-test"/>
 
     <target name="dist"
             depends="clean,init,prepare-dist,preloader,runner,serialize-builtins,compiler,compiler-sources,kotlin-build-common,ant-tools,runtime,kotlin-js-stdlib,android-extensions-compiler,annotation-processing-under-jdk8,daemon-client,kotlin-build-common-test"
@@ -1182,12 +1230,17 @@
             </src>
             <class-path>
                 <pathelement path="${output}/classes/builtins"/>
+                <pathelement path="${output}/builtins"/>
             </class-path>
         </new-kotlinc>
 
         <pack-runtime-jar jar-dir="${output}" jar-name="kotlin-mock-runtime-for-test.jar" implementation-title="Kotlin Mock Runtime">
             <jar-content>
                 <fileset dir="${output}/classes/mock-runtime"/>
+                <zipfileset dir="${output}/builtins">
+                    <include name="kotlin/**"/>
+                    <!-- exclude name="kotlin/reflect/**"/ -->
+                </zipfileset>
             </jar-content>
         </pack-runtime-jar>
     </target>

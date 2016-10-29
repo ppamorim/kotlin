@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 JetBrains s.r.o.
+ * Copyright 2010-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import com.google.common.collect.Sets;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.search.GlobalSearchScope;
 import kotlin.collections.CollectionsKt;
 import kotlin.jvm.functions.Function1;
 import org.jetbrains.annotations.NotNull;
@@ -31,15 +32,24 @@ import org.jetbrains.kotlin.cli.jvm.compiler.CliLightClassGenerationSupport;
 import org.jetbrains.kotlin.cli.jvm.compiler.JvmPackagePartProvider;
 import org.jetbrains.kotlin.config.CommonConfigurationKeys;
 import org.jetbrains.kotlin.config.CompilerConfiguration;
-import org.jetbrains.kotlin.config.LanguageFeatureSettings;
+import org.jetbrains.kotlin.config.LanguageVersionSettings;
+import org.jetbrains.kotlin.config.LanguageVersionSettingsImpl;
+import org.jetbrains.kotlin.container.ComponentProvider;
+import org.jetbrains.kotlin.container.DslKt;
 import org.jetbrains.kotlin.context.ContextKt;
 import org.jetbrains.kotlin.context.GlobalContext;
 import org.jetbrains.kotlin.context.ModuleContext;
 import org.jetbrains.kotlin.context.SimpleGlobalContext;
 import org.jetbrains.kotlin.descriptors.DeclarationDescriptor;
+import org.jetbrains.kotlin.descriptors.ModuleDescriptor;
+import org.jetbrains.kotlin.descriptors.PackagePartProvider;
 import org.jetbrains.kotlin.descriptors.PackageViewDescriptor;
+import org.jetbrains.kotlin.descriptors.impl.CompositePackageFragmentProvider;
 import org.jetbrains.kotlin.descriptors.impl.ModuleDescriptorImpl;
 import org.jetbrains.kotlin.diagnostics.*;
+import org.jetbrains.kotlin.frontend.java.di.InjectionKt;
+import org.jetbrains.kotlin.incremental.components.LookupTracker;
+import org.jetbrains.kotlin.load.java.lazy.SingleModuleClassResolver;
 import org.jetbrains.kotlin.name.FqName;
 import org.jetbrains.kotlin.name.Name;
 import org.jetbrains.kotlin.name.SpecialNames;
@@ -48,15 +58,15 @@ import org.jetbrains.kotlin.psi.Call;
 import org.jetbrains.kotlin.psi.KtElement;
 import org.jetbrains.kotlin.psi.KtExpression;
 import org.jetbrains.kotlin.psi.KtFile;
-import org.jetbrains.kotlin.resolve.AnalyzingUtils;
-import org.jetbrains.kotlin.resolve.BindingContext;
-import org.jetbrains.kotlin.resolve.BindingTrace;
-import org.jetbrains.kotlin.resolve.TargetPlatformKt;
+import org.jetbrains.kotlin.resolve.*;
 import org.jetbrains.kotlin.resolve.calls.model.MutableResolvedCall;
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall;
+import org.jetbrains.kotlin.resolve.calls.smartcasts.DataFlowInfo;
 import org.jetbrains.kotlin.resolve.diagnostics.Diagnostics;
+import org.jetbrains.kotlin.resolve.jvm.JavaDescriptorResolver;
 import org.jetbrains.kotlin.resolve.jvm.TopDownAnalyzerFacadeForJVM;
-import org.jetbrains.kotlin.resolve.jvm.platform.JvmPlatform;
+import org.jetbrains.kotlin.resolve.lazy.KotlinCodeAnalyzer;
+import org.jetbrains.kotlin.resolve.lazy.declarations.FileBasedDeclarationProviderFactory;
 import org.jetbrains.kotlin.storage.ExceptionTracker;
 import org.jetbrains.kotlin.storage.LockBasedStorageManager;
 import org.jetbrains.kotlin.storage.StorageManager;
@@ -135,9 +145,14 @@ public abstract class AbstractDiagnosticsTest extends BaseDiagnosticsTest {
 
             moduleBindings.put(testModule, moduleTrace.getBindingContext());
 
-            LanguageFeatureSettings languageFeatureSettings = loadCustomLanguageFeatureSettings(testFilesInModule);
+            LanguageVersionSettings languageVersionSettings = loadLanguageVersionSettings(testFilesInModule);
             ModuleContext moduleContext = ContextKt.withModule(ContextKt.withProject(context, getProject()), module);
-            analyzeModuleContents(moduleContext, jetFiles, moduleTrace, languageFeatureSettings);
+
+            boolean separateModules = groupedByModule.size() == 1;
+            AnalysisResult result = analyzeModuleContents(moduleContext, jetFiles, moduleTrace, languageVersionSettings, separateModules);
+            if (separateModules) {
+                modules.put(testModule, (ModuleDescriptorImpl) result.getModuleDescriptor());
+            }
 
             checkAllResolvedCallsAreCompleted(jetFiles, moduleTrace.getBindingContext());
         }
@@ -194,20 +209,34 @@ public abstract class AbstractDiagnosticsTest extends BaseDiagnosticsTest {
         if (exceptionFromDynamicCallDescriptorsValidation != null) {
             throw ExceptionUtilsKt.rethrow(exceptionFromDynamicCallDescriptorsValidation);
         }
+
+        performAdditionalChecksAfterDiagnostics(testDataFile, testFiles, groupedByModule, modules, moduleBindings);
+    }
+
+    protected void performAdditionalChecksAfterDiagnostics(
+            File testDataFile,
+            List<TestFile> testFiles,
+            Map<TestModule, List<TestFile>> moduleFiles,
+            Map<TestModule, ModuleDescriptorImpl> moduleDescriptors,
+            Map<TestModule, BindingContext> moduleBindings
+    ) {
+        // To be overridden by diagnostic-like tests.
     }
 
     @Nullable
-    private LanguageFeatureSettings loadCustomLanguageFeatureSettings(List<? extends TestFile> module) {
-        LanguageFeatureSettings result = null;
+    private LanguageVersionSettings loadLanguageVersionSettings(List<? extends TestFile> module) {
+        LanguageVersionSettings result = null;
         for (TestFile file : module) {
-            if (file.customLanguageFeatureSettings != null) {
-                if (result != null) {
+            LanguageVersionSettings current = file.customLanguageVersionSettings;
+            if (current != null) {
+                if (result != null && !result.equals(current)) {
                     Assert.fail(
-                            "More than one file in the module has " + BaseDiagnosticsTest.LANGUAGE_DIRECTIVE + " directive specified. " +
+                            "More than one file in the module has " + BaseDiagnosticsTest.LANGUAGE_DIRECTIVE + " or " +
+                            BaseDiagnosticsTest.API_VERSION_DIRECTIVE + " directive specified. " +
                             "This is not supported. Please move all directives into one file"
                     );
                 }
-                result = file.customLanguageFeatureSettings;
+                result = current;
             }
         }
 
@@ -264,22 +293,67 @@ public abstract class AbstractDiagnosticsTest extends BaseDiagnosticsTest {
             @NotNull ModuleContext moduleContext,
             @NotNull List<KtFile> files,
             @NotNull BindingTrace moduleTrace,
-            @Nullable LanguageFeatureSettings languageFeatureSettings
+            @Nullable LanguageVersionSettings languageVersionSettings,
+            boolean separateModules
     ) {
         CompilerConfiguration configuration;
-        if (languageFeatureSettings != null) {
+        if (languageVersionSettings != null) {
             configuration = getEnvironment().getConfiguration().copy();
-            configuration.put(CommonConfigurationKeys.LANGUAGE_FEATURE_SETTINGS, languageFeatureSettings);
+            configuration.put(CommonConfigurationKeys.LANGUAGE_VERSION_SETTINGS, languageVersionSettings);
         }
         else {
             configuration = getEnvironment().getConfiguration();
+            languageVersionSettings = LanguageVersionSettingsImpl.DEFAULT;
         }
 
         // New JavaDescriptorResolver is created for each module, which is good because it emulates different Java libraries for each module,
         // albeit with same class names
-        return TopDownAnalyzerFacadeForJVM.analyzeFilesWithJavaIntegration(
-                moduleContext, files, moduleTrace, configuration, new JvmPackagePartProvider(getEnvironment())
+        // See TopDownAnalyzerFacadeForJVM#analyzeFilesWithJavaIntegration
+
+        // Temporary solution: only use separate module mode in single-module tests because analyzeFilesWithJavaIntegration
+        // only supports creating two modules, whereas there can be more than two in multi-module diagnostic tests
+        // TODO: always use separate module mode, once analyzeFilesWithJavaIntegration can create multiple modules
+        if (separateModules) {
+            return TopDownAnalyzerFacadeForJVM.analyzeFilesWithJavaIntegration(
+                    moduleContext.getProject(),
+                    files,
+                    moduleTrace,
+                    configuration,
+                    new Function1<GlobalSearchScope, PackagePartProvider>() {
+                        @Override
+                        public PackagePartProvider invoke(GlobalSearchScope scope) {
+                            return new JvmPackagePartProvider(getEnvironment(), scope);
+                        }
+                    }
+            );
+        }
+
+        GlobalSearchScope moduleContentScope = GlobalSearchScope.allScope(moduleContext.getProject());
+        SingleModuleClassResolver moduleClassResolver = new SingleModuleClassResolver();
+        ComponentProvider container = InjectionKt.createContainerForTopDownAnalyzerForJvm(
+                moduleContext,
+                moduleTrace,
+                new FileBasedDeclarationProviderFactory(moduleContext.getStorageManager(), files),
+                moduleContentScope,
+                LookupTracker.Companion.getDO_NOTHING(),
+                new JvmPackagePartProvider(getEnvironment(), moduleContentScope),
+                languageVersionSettings,
+                moduleClassResolver
         );
+        InjectionKt.initJvmBuiltInsForTopDownAnalysis(container, moduleContext.getModule(), languageVersionSettings);
+        moduleClassResolver.setResolver(DslKt.getService(container, JavaDescriptorResolver.class));
+
+        ModuleDescriptorImpl moduleDescriptor = (ModuleDescriptorImpl) moduleContext.getModule();
+        moduleDescriptor.initialize(new CompositePackageFragmentProvider(Arrays.asList(
+                DslKt.getService(container, KotlinCodeAnalyzer.class).getPackageFragmentProvider(),
+                DslKt.getService(container, JavaDescriptorResolver.class).getPackageFragmentProvider()
+        )));
+
+        DslKt.getService(container, LazyTopDownAnalyzer.class).analyzeDeclarations(
+                TopDownAnalysisMode.TopLevelDeclarations, files, DataFlowInfo.Companion.getEMPTY()
+        );
+
+        return AnalysisResult.success(moduleTrace.getBindingContext(), moduleDescriptor);
     }
 
     private void validateAndCompareDescriptorWithFile(
@@ -297,13 +371,13 @@ public abstract class AbstractDiagnosticsTest extends BaseDiagnosticsTest {
             return;
         }
 
-        RecursiveDescriptorComparator comparator = new RecursiveDescriptorComparator(createdAffectedPackagesConfiguration(testFiles));
+        RecursiveDescriptorComparator comparator = new RecursiveDescriptorComparator(createdAffectedPackagesConfiguration(testFiles, modules.values()));
 
         boolean isMultiModuleTest = modules.size() != 1;
         StringBuilder rootPackageText = new StringBuilder();
 
-        for (TestModule module : CollectionsKt.sorted(modules.keySet())) {
-            ModuleDescriptorImpl moduleDescriptor = modules.get(module);
+        for (Iterator<TestModule> module = CollectionsKt.sorted(modules.keySet()).iterator(); module.hasNext(); ) {
+            ModuleDescriptorImpl moduleDescriptor = modules.get(module.next());
             PackageViewDescriptor aPackage = moduleDescriptor.getPackage(FqName.ROOT);
             assertFalse(aPackage.isEmpty());
 
@@ -314,7 +388,7 @@ public abstract class AbstractDiagnosticsTest extends BaseDiagnosticsTest {
             String actualSerialized = comparator.serializeRecursively(aPackage);
             rootPackageText.append(actualSerialized);
 
-            if (isMultiModuleTest) {
+            if (isMultiModuleTest && module.hasNext()) {
                 rootPackageText.append("\n\n");
             }
         }
@@ -328,12 +402,15 @@ public abstract class AbstractDiagnosticsTest extends BaseDiagnosticsTest {
         KotlinTestUtils.assertEqualsToFile(expectedFile, rootPackageText.toString());
     }
 
-    private RecursiveDescriptorComparator.Configuration createdAffectedPackagesConfiguration(List<TestFile> testFiles) {
+    private RecursiveDescriptorComparator.Configuration createdAffectedPackagesConfiguration(List<TestFile> testFiles, final Collection<? extends ModuleDescriptor> modules) {
         final Set<Name> packagesNames = getTopLevelPackagesFromFileList(getJetFiles(testFiles, false));
 
         Predicate<DeclarationDescriptor> stepIntoFilter = new Predicate<DeclarationDescriptor>() {
             @Override
             public boolean apply(DeclarationDescriptor descriptor) {
+                ModuleDescriptor module = DescriptorUtils.getContainingModuleOrNull(descriptor);
+                if (!modules.contains(module)) return false;
+
                 if (descriptor instanceof PackageViewDescriptor) {
                     FqName fqName = ((PackageViewDescriptor) descriptor).getFqName();
 
@@ -395,11 +472,7 @@ public abstract class AbstractDiagnosticsTest extends BaseDiagnosticsTest {
 
     @NotNull
     protected ModuleDescriptorImpl createModule(@NotNull String moduleName, @NotNull StorageManager storageManager) {
-        JvmBuiltIns builtIns = new JvmBuiltIns(storageManager);
-        ModuleDescriptorImpl module = TargetPlatformKt.createModule(
-                JvmPlatform.INSTANCE, Name.special(moduleName), storageManager, builtIns);
-        builtIns.setOwnerModuleDescriptor(module);
-        return module;
+        return new ModuleDescriptorImpl(Name.special(moduleName), storageManager, new JvmBuiltIns(storageManager));
     }
 
     @NotNull

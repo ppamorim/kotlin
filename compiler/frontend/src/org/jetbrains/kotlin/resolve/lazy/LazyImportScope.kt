@@ -19,17 +19,20 @@ package org.jetbrains.kotlin.resolve.lazy
 import com.google.common.collect.HashMultimap
 import com.google.common.collect.ImmutableListMultimap
 import com.google.common.collect.ListMultimap
+import org.jetbrains.kotlin.config.LanguageVersionSettings
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.diagnostics.Errors
 import org.jetbrains.kotlin.incremental.KotlinLookupLocation
 import org.jetbrains.kotlin.incremental.components.LookupLocation
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.platform.PlatformToKotlinClassMap
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtPsiUtil
 import org.jetbrains.kotlin.resolve.BindingTrace
-import org.jetbrains.kotlin.resolve.PlatformTypesMappedToKotlinChecker
+import org.jetbrains.kotlin.resolve.PlatformClassesMappedToKotlinChecker
 import org.jetbrains.kotlin.resolve.QualifiedExpressionResolver
+import org.jetbrains.kotlin.resolve.isHiddenInResolution
 import org.jetbrains.kotlin.resolve.scopes.DescriptorKindFilter
 import org.jetbrains.kotlin.resolve.scopes.ImportingScope
 import org.jetbrains.kotlin.storage.StorageManager
@@ -72,8 +75,10 @@ interface ImportResolver {
 
 class LazyImportResolver(
         val storageManager: StorageManager,
-        val qualifiedExpressionResolver: QualifiedExpressionResolver,
+        private val qualifiedExpressionResolver: QualifiedExpressionResolver,
         val moduleDescriptor: ModuleDescriptor,
+        private val platformToKotlinClassMap: PlatformToKotlinClassMap,
+        val languageVersionSettings: LanguageVersionSettings,
         val indexedImports: IndexedImports,
         excludedImportNames: Collection<FqName>,
         private val traceForImportResolve: BindingTrace,
@@ -81,15 +86,16 @@ class LazyImportResolver(
 ) : ImportResolver {
     private val importedScopesProvider = storageManager.createMemoizedFunctionWithNullableValues {
         directive: KtImportDirective ->
-            val directiveImportScope = qualifiedExpressionResolver.processImportReference(
-                    directive, moduleDescriptor, traceForImportResolve, excludedImportNames, packageFragment) ?: return@createMemoizedFunctionWithNullableValues null
 
+        qualifiedExpressionResolver.processImportReference(
+                directive, moduleDescriptor, traceForImportResolve, excludedImportNames, packageFragment
+        )?.apply {
             if (!directive.isAllUnder) {
-                PlatformTypesMappedToKotlinChecker.checkPlatformTypesMappedToKotlin(
-                        moduleDescriptor, traceForImportResolve, directive, directiveImportScope.getContributedDescriptors())
+                PlatformClassesMappedToKotlinChecker.checkPlatformClassesMappedToKotlin(
+                        platformToKotlinClassMap, traceForImportResolve, directive, getContributedDescriptors()
+                )
             }
-
-            directiveImportScope
+        }
     }
 
     override fun forceResolveAllImports() {
@@ -177,6 +183,9 @@ class LazyImportScope(
 
     private fun isClassifierVisible(descriptor: ClassifierDescriptor): Boolean {
         if (filteringKind == FilteringKind.ALL) return true
+
+        if (descriptor.isHiddenInResolution(importResolver.languageVersionSettings)) return false
+
         val visibility = (descriptor as DeclarationDescriptorWithVisibility).visibility
         val includeVisible = filteringKind == FilteringKind.VISIBLE_CLASSES
         if (!visibility.mustCheckInImports()) return includeVisible

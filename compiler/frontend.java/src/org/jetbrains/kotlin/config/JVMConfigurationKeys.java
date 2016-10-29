@@ -16,6 +16,7 @@
 
 package org.jetbrains.kotlin.config;
 
+import org.jetbrains.kotlin.incremental.components.SourceRetentionAnnotationHandler;
 import org.jetbrains.kotlin.load.kotlin.incremental.components.IncrementalCompilationComponents;
 import org.jetbrains.kotlin.modules.Module;
 import org.jetbrains.kotlin.script.KotlinScriptDefinition;
@@ -55,8 +56,16 @@ public class JVMConfigurationKeys {
     public static final CompilerConfigurationKey<Boolean> USE_TYPE_TABLE =
             CompilerConfigurationKey.create("use type table in serializer");
 
+    public static final CompilerConfigurationKey<Boolean> USE_SINGLE_MODULE =
+            CompilerConfigurationKey.create("combine modules for source files and binary dependencies into a single module");
+    public static final CompilerConfigurationKey<Boolean> ADD_BUILT_INS_TO_DEPENDENCIES =
+            CompilerConfigurationKey.create("add built-ins to dependencies");
+
     public static final CompilerConfigurationKey<JvmTarget> JVM_TARGET =
             CompilerConfigurationKey.create("JVM bytecode target version");
+
+    public static final CompilerConfigurationKey<Boolean> INTERFACE_COMPATIBILITY =
+            CompilerConfigurationKey.create("Generate additional 'DefaultImpls' class files for jvm 8 target for compatibility with 6 target interfaces");
 
     public static final CompilerConfigurationKey<IncrementalCompilationComponents> INCREMENTAL_COMPILATION_COMPONENTS =
             CompilerConfigurationKey.create("incremental cache provider");
@@ -64,15 +73,18 @@ public class JVMConfigurationKeys {
     public static final CompilerConfigurationKey<File> MODULE_XML_FILE =
             CompilerConfigurationKey.create("path to module.xml");
 
+    public static final CompilerConfigurationKey<SourceRetentionAnnotationHandler> SOURCE_RETENTION_ANNOTATION_HANDLER =
+            CompilerConfigurationKey.create("source retention annotation handler");
+
     public static final CompilerConfigurationKey<String> DECLARATIONS_JSON_PATH =
             CompilerConfigurationKey.create("path to declarations output");
 
     public static final CompilerConfigurationKey<List<Module>> MODULES =
             CompilerConfigurationKey.create("module data");
 
-    public static final CompilerConfigurationKey<Boolean> LOAD_SCRIPT_CONFIGS =
-            CompilerConfigurationKey.create("Load script configuration files from project directory tree");
-
     public static final CompilerConfigurationKey<List<String>> FRIEND_PATHS =
             CompilerConfigurationKey.create("friend module paths");
+
+    public static final CompilerConfigurationKey<Boolean> IR =
+            CompilerConfigurationKey.create("IR");
 }

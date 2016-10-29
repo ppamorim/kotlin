@@ -16,13 +16,12 @@
 
 package org.jetbrains.kotlin.cli.jvm.repl
 
-import com.intellij.psi.search.ProjectScope
+import com.intellij.psi.search.GlobalSearchScope
 import org.jetbrains.kotlin.cli.jvm.compiler.CliLightClassGenerationSupport
 import org.jetbrains.kotlin.cli.jvm.compiler.JvmPackagePartProvider
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
-import org.jetbrains.kotlin.cli.jvm.repl.di.createContainerForReplWithJava
+import org.jetbrains.kotlin.container.get
 import org.jetbrains.kotlin.descriptors.ScriptDescriptor
-import org.jetbrains.kotlin.descriptors.impl.CompositePackageFragmentProvider
 import org.jetbrains.kotlin.descriptors.impl.ModuleDescriptorImpl
 import org.jetbrains.kotlin.diagnostics.Severity
 import org.jetbrains.kotlin.name.FqName
@@ -39,7 +38,7 @@ import org.jetbrains.kotlin.script.ScriptPriorities
 
 class CliReplAnalyzerEngine(environment: KotlinCoreEnvironment) {
     private val topDownAnalysisContext: TopDownAnalysisContext
-    private val topDownAnalyzer: LazyTopDownAnalyzerForTopLevel
+    private val topDownAnalyzer: LazyTopDownAnalyzer
     private val resolveSession: ResolveSession
     private val scriptDeclarationFactory: ScriptMutableDeclarationProviderFactory
     val module: ModuleDescriptorImpl
@@ -47,32 +46,25 @@ class CliReplAnalyzerEngine(environment: KotlinCoreEnvironment) {
     val trace: BindingTraceContext = CliLightClassGenerationSupport.NoScopeRecordCliBindingTrace()
 
     init {
-        val moduleContext = TopDownAnalyzerFacadeForJVM.createContextWithSealedModule(environment.project, environment.configuration)
-        this.module = moduleContext.module
-
-        scriptDeclarationFactory = ScriptMutableDeclarationProviderFactory()
-
-        val container = createContainerForReplWithJava(
-                moduleContext,
+        // Module source scope is empty because all binary classes are in the dependency module, and all source classes are guaranteed
+        // to be found via ResolveSession. The latter is true as long as light classes are not needed in REPL (which is currently true
+        // because no symbol declared in the REPL session can be used from Java)
+        val container = TopDownAnalyzerFacadeForJVM.createContainer(
+                environment.project,
+                emptyList(),
                 trace,
-                scriptDeclarationFactory,
-                ProjectScope.getAllScope(environment.project),
-                JvmPackagePartProvider(environment)
+                environment.configuration,
+                { scope -> JvmPackagePartProvider(environment, scope) },
+                { storageManager, files -> ScriptMutableDeclarationProviderFactory() }
         )
 
+        this.module = container.get<ModuleDescriptorImpl>()
+        this.scriptDeclarationFactory = container.get<ScriptMutableDeclarationProviderFactory>()
+        this.resolveSession = container.get<ResolveSession>()
         this.topDownAnalysisContext = TopDownAnalysisContext(
-                TopDownAnalysisMode.LocalDeclarations, DataFlowInfoFactory.EMPTY, container.resolveSession.declarationScopeProvider
+                TopDownAnalysisMode.LocalDeclarations, DataFlowInfoFactory.EMPTY, resolveSession.declarationScopeProvider
         )
-        this.topDownAnalyzer = container.lazyTopDownAnalyzerForTopLevel
-        this.resolveSession = container.resolveSession
-
-        moduleContext.initializeModuleContents(CompositePackageFragmentProvider(
-                listOf(
-                        container.resolveSession.packageFragmentProvider,
-                        container.javaDescriptorResolver.packageFragmentProvider
-                )
-        ))
-
+        this.topDownAnalyzer = container.get<LazyTopDownAnalyzer>()
     }
 
     interface ReplLineAnalysisResult {

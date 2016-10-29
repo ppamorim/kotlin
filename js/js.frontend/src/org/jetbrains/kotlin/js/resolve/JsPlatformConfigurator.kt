@@ -20,29 +20,36 @@ import org.jetbrains.kotlin.container.StorageComponentContainer
 import org.jetbrains.kotlin.container.useImpl
 import org.jetbrains.kotlin.container.useInstance
 import org.jetbrains.kotlin.js.resolve.diagnostics.JsCallChecker
+import org.jetbrains.kotlin.js.resolve.diagnostics.JsNameChecker
+import org.jetbrains.kotlin.js.resolve.diagnostics.JsNameClashChecker
 import org.jetbrains.kotlin.js.resolve.diagnostics.NativeInnerClassChecker
+import org.jetbrains.kotlin.platform.PlatformToKotlinClassMap
 import org.jetbrains.kotlin.resolve.IdentifierChecker
 import org.jetbrains.kotlin.resolve.OverloadFilter
 import org.jetbrains.kotlin.resolve.PlatformConfigurator
+import org.jetbrains.kotlin.js.resolve.diagnostics.JsReflectionAPICallChecker
+import org.jetbrains.kotlin.resolve.scopes.SyntheticConstructorsProvider
 import org.jetbrains.kotlin.resolve.scopes.SyntheticScopes
 import org.jetbrains.kotlin.types.DynamicTypesAllowed
 
 object JsPlatformConfigurator : PlatformConfigurator(
         DynamicTypesAllowed(),
         additionalDeclarationCheckers = listOf(NativeInvokeChecker(), NativeGetterChecker(), NativeSetterChecker(),
-                                               NativeInnerClassChecker()),
+                                               NativeInnerClassChecker(), JsNameChecker),
         additionalCallCheckers = listOf(),
         additionalTypeCheckers = listOf(),
         additionalClassifierUsageCheckers = listOf(),
         additionalAnnotationCheckers = listOf(),
         identifierChecker = IdentifierChecker.DEFAULT,
-        overloadFilter = OverloadFilter.DEFAULT
+        overloadFilter = OverloadFilter.DEFAULT,
+        platformToKotlinClassMap = PlatformToKotlinClassMap.EMPTY
 ) {
-    override fun configure(container: StorageComponentContainer) {
-        super.configure(container)
-
+    override fun configureModuleComponents(container: StorageComponentContainer) {
         container.useImpl<JsCallChecker>()
         container.useInstance(SyntheticScopes.Empty)
+        container.useInstance(SyntheticConstructorsProvider.Empty)
         container.useInstance(JsTypeSpecificityComparator)
+        container.useInstance(JsNameClashChecker())
+        container.useImpl<JsReflectionAPICallChecker>()
     }
 }

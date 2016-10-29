@@ -23,12 +23,17 @@ import org.jetbrains.org.objectweb.asm.Opcodes.*
 import java.io.File
 
 abstract class AbstractBytecodeListingTest : CodegenTestCase() {
-    override fun doTest(filename: String) {
-        createEnvironmentWithMockJdkAndIdeaAnnotations(ConfigurationKind.ALL)
-        loadFileByFullPath(filename)
-        val ktFile = File(filename)
-        val txtFile = File(ktFile.parentFile, ktFile.nameWithoutExtension + ".txt")
-        val generatedFiles = CodegenTestUtil.generateFiles(myEnvironment, myFiles)
+    protected open val classBuilderFactory: ClassBuilderFactory
+        get() = ClassBuilderFactories.TEST
+
+    override fun doMultiFileTest(wholeFile: File, files: List<TestFile>, javaFilesDir: File?) {
+        val javaSources = javaFilesDir?.let { arrayOf(it) } ?: emptyArray()
+
+        createEnvironmentWithMockJdkAndIdeaAnnotations(ConfigurationKind.ALL, *javaSources)
+        loadMultiFiles(files)
+
+        val txtFile = File(wholeFile.parentFile, wholeFile.nameWithoutExtension + ".txt")
+        val generatedFiles = CodegenTestUtil.generateFiles(myEnvironment, myFiles, classBuilderFactory)
                 .getClassFiles()
                 .sortedBy { it.relativePath }
                 .map {

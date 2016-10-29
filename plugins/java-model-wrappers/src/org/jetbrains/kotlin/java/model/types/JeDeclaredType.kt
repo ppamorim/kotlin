@@ -18,29 +18,44 @@ package org.jetbrains.kotlin.java.model.types
 
 import com.intellij.pom.java.LanguageLevel
 import com.intellij.psi.*
-import com.intellij.psi.impl.light.LightClassReferenceExpression
+import com.intellij.psi.impl.PsiSubstitutorImpl
 import com.intellij.psi.impl.source.PsiClassReferenceType
-import com.intellij.psi.util.PsiTypesUtil
+import com.intellij.psi.impl.source.PsiImmediateClassType
+import org.jetbrains.kotlin.annotation.processing.impl.toDisposable
 import org.jetbrains.kotlin.java.model.elements.JeTypeElement
+import org.jetbrains.kotlin.java.model.internal.getTypeWithTypeParameters
 import org.jetbrains.kotlin.java.model.internal.isStatic
 import javax.lang.model.type.DeclaredType
 import javax.lang.model.type.TypeKind
 import javax.lang.model.type.TypeMirror
 import javax.lang.model.type.TypeVisitor
 
-fun createDeclaredType(psiClass: PsiClass, typeArgs: List<PsiType>): PsiClassReferenceType? {
-    val args = typeArgs.toTypedArray()
-    val text = (psiClass.name ?: return null) + typeArgs.joinToString(prefix = "<", postfix = ">") { it.canonicalText }
-    return PsiClassReferenceType(object : LightClassReferenceExpression(psiClass.manager, text, psiClass) {
-        override fun getTypeParameters() = args
-    }, LanguageLevel.JDK_1_8)
+fun createImmediateClassType(psiClass: PsiClass, typeArgs: List<PsiType>): PsiImmediateClassType? {
+    val typeParameters = psiClass.typeParameters
+    assert(typeParameters.size == typeArgs.size) { "Type parameters size: ${typeParameters.size}, type args size: ${typeArgs.size}" }
+
+    val parametersMap = typeParameters.zip(typeArgs).toMap()
+    val substitutor = PsiSubstitutorImpl.createSubstitutor(parametersMap)
+    return PsiImmediateClassType(psiClass, substitutor, LanguageLevel.JDK_1_8)
 }
 
 class JeDeclaredType(
-        override val psiType: PsiClassType,
-        val psiClass: PsiClass,
-        val enclosingDeclaredType: DeclaredType? = null
-) : JePsiType(), JeTypeWithManager, DeclaredType {
+        psiType: PsiClassType,
+        psiClass: PsiClass,
+        val enclosingDeclaredType: DeclaredType? = null,
+        val isRaw: Boolean = false
+) : JePsiTypeBase<PsiClassType>(psiType, psiClass.manager), DeclaredType {
+    private val disposablePsiClass = psiClass.toDisposable()
+
+    val psiClass: PsiClass
+        get() = disposablePsiClass()
+
+    // JeElementRegistry registration is done in JePsiType
+    override fun dispose() {
+        super.dispose()
+        disposablePsiClass.dispose()
+    }
+
     override fun getKind() = TypeKind.DECLARED
     
     override fun <R : Any?, P : Any?> accept(v: TypeVisitor<R, P>, p: P) = v.visitDeclared(this, p)
@@ -50,7 +65,10 @@ class JeDeclaredType(
 
     override fun getTypeArguments(): List<TypeMirror> {
         return when (psiType) {
+            is PsiClassReferenceType -> psiType.parameters.map { it.toJeType(psiManager) }
             is PsiClassType -> {
+                if (isRaw) return emptyList()
+                
                 val substitutor = psiType.resolveGenerics().substitutor
                 val psiClass = psiType.resolve() ?: return psiType.parameters.map { it.toJeType(psiManager) }
 
@@ -60,7 +78,7 @@ class JeDeclaredType(
                     if (substitutedParameter != null)
                         args += substitutedParameter.toJeType(psiManager)
                     else
-                        args += JeTypeVariableType(PsiTypesUtil.getClassType(typeParameter), typeParameter)
+                        args += JeTypeVariableType(typeParameter.getTypeWithTypeParameters(), typeParameter)
                 }
 
                 args
@@ -77,16 +95,35 @@ class JeDeclaredType(
         if (enclosingDeclaredType != null) return enclosingDeclaredType
         
         val psiClass = psiClass.containingClass ?: return JeNoneType
-        return PsiTypesUtil.getClassType(psiClass).toJeType(psiManager)
+        return psiClass.getTypeWithTypeParameters().toJeType(psiManager)
     }
 
-    override fun equals(other: Any?): Boolean{
+    override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other?.javaClass != javaClass) return false
-        return psiType == (other as? JeDeclaredType)?.psiType
+        other as? JeDeclaredType ?: return false
+        
+        return enclosingType == other.enclosingType
+               && psiClass == other.psiClass
+               && typeArguments == other.typeArguments
+               && isRaw == other.isRaw
     }
-
-    override fun hashCode() = psiType.hashCode()
     
-    override fun toString() = psiType.getCanonicalText(false)
+    override fun hashCode(): Int {
+        var result = enclosingType.hashCode()
+        result = 31 * result + psiClass.hashCode()
+        result = 31 * result + typeArguments.hashCode()
+        result = 31 * result + isRaw.hashCode()
+        return result
+    }
+    
+    override fun toString() = buildString {
+        append(psiClass.qualifiedName ?: psiClass.name)
+        val typeArgs = typeArguments
+        if (typeArgs.isNotEmpty()) {
+            append('<')
+            append(typeArguments.joinToString(","))
+            append('>')
+        }
+    }
 }

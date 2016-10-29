@@ -99,9 +99,8 @@ public class CompileKotlinAgainstCustomBinariesTest extends TestCaseWithTmpdir {
     private void doTestWithTxt(@NotNull File... extraClassPath) throws Exception {
         PackageViewDescriptor packageView = analyzeFileToPackageView(extraClassPath);
 
-        RecursiveDescriptorComparator.Configuration comparator =
-                RecursiveDescriptorComparator.DONT_INCLUDE_METHODS_OF_OBJECT.withValidationStrategy(
-                        DescriptorValidator.ValidationVisitor.errorTypesAllowed());
+        RecursiveDescriptorComparator.Configuration comparator = AbstractLoadJavaTest.COMPARATOR_CONFIGURATION
+                .withValidationStrategy(DescriptorValidator.ValidationVisitor.errorTypesAllowed());
         validateAndCompareDescriptorWithFile(packageView, comparator, getTestDataFileWithExtension("txt"));
     }
 
@@ -184,10 +183,19 @@ public class CompileKotlinAgainstCustomBinariesTest extends TestCaseWithTmpdir {
         return library;
     }
 
+    private Pair<String, ExitCode> compileKotlin(
+            @NotNull String fileName,
+            @NotNull File output,
+            @NotNull File... classpath
+    ) {
+        return compileKotlin(fileName, output, Collections.<String>emptyList(), classpath);
+    }
+
     @NotNull
     private Pair<String, ExitCode> compileKotlin(
             @NotNull String fileName,
             @NotNull File output,
+            List<String> additionalOptions,
             @NotNull File... classpath
     ) {
         List<String> args = new ArrayList<String>();
@@ -200,6 +208,7 @@ public class CompileKotlinAgainstCustomBinariesTest extends TestCaseWithTmpdir {
         }
         args.add("-d");
         args.add(output.getPath());
+        args.addAll(additionalOptions);
 
         return AbstractCliTest.executeCompilerGrabOutput(new K2JVMCompiler(), args);
     }
@@ -398,6 +407,34 @@ public class CompileKotlinAgainstCustomBinariesTest extends TestCaseWithTmpdir {
         );
 
         Pair<String, ExitCode> outputMain = compileKotlin("main.kt", tmpdir, tmpdir, library);
+
+        KotlinTestUtils.assertEqualsToFile(
+                new File(getTestDataDirectory(), "output.txt"), normalizeOutput(outputMain)
+        );
+    }
+
+    public void testTarget6Inheritance() throws Exception {
+        target6Inheritance();
+    }
+
+    public void testTarget6MultiInheritance() throws Exception {
+        target6Inheritance();
+    }
+
+    private void target6Inheritance() {
+        compileKotlin("target6.kt", tmpdir);
+
+        Pair<String, ExitCode> outputMain = compileKotlin("main.kt", tmpdir, Arrays.asList("-jvm-target", "1.8"), tmpdir);
+
+        KotlinTestUtils.assertEqualsToFile(
+                new File(getTestDataDirectory(), "output.txt"), normalizeOutput(outputMain)
+        );
+    }
+
+    public void testTypeAliasesAreInvisibleInCompatibilityMode() {
+        compileKotlin("typeAliases.kt", tmpdir);
+
+        Pair<String, ExitCode> outputMain = compileKotlin("main.kt", tmpdir, Arrays.asList("-language-version", "1.0"), tmpdir);
 
         KotlinTestUtils.assertEqualsToFile(
                 new File(getTestDataDirectory(), "output.txt"), normalizeOutput(outputMain)

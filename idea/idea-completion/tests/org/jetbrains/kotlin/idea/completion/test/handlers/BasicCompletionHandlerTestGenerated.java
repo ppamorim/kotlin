@@ -41,24 +41,6 @@ public class BasicCompletionHandlerTestGenerated extends AbstractBasicCompletion
         KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("idea/idea-completion/testData/handlers/basic"), Pattern.compile("^(.+)\\.kt$"), true);
     }
 
-    @TestMetadata("AnnotationInBrackets.kt")
-    public void testAnnotationInBrackets() throws Exception {
-        String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/AnnotationInBrackets.kt");
-        doTest(fileName);
-    }
-
-    @TestMetadata("AnnotationInClassAddImport.kt")
-    public void testAnnotationInClassAddImport() throws Exception {
-        String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/AnnotationInClassAddImport.kt");
-        doTest(fileName);
-    }
-
-    @TestMetadata("AnnotationInCompanionObjectAddImport.kt")
-    public void testAnnotationInCompanionObjectAddImport() throws Exception {
-        String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/AnnotationInCompanionObjectAddImport.kt");
-        doTest(fileName);
-    }
-
     @TestMetadata("ClassKeywordBeforeName.kt")
     public void testClassKeywordBeforeName() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/ClassKeywordBeforeName.kt");
@@ -143,6 +125,12 @@ public class BasicCompletionHandlerTestGenerated extends AbstractBasicCompletion
         doTest(fileName);
     }
 
+    @TestMetadata("KT14130.kt")
+    public void testKT14130() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/KT14130.kt");
+        doTest(fileName);
+    }
+
     @TestMetadata("NestedTypeArg.kt")
     public void testNestedTypeArg() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/NestedTypeArg.kt");
@@ -219,6 +207,39 @@ public class BasicCompletionHandlerTestGenerated extends AbstractBasicCompletion
     public void testTypeParameter() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/TypeParameter.kt");
         doTest(fileName);
+    }
+
+    @TestMetadata("idea/idea-completion/testData/handlers/basic/annotation")
+    @TestDataPath("$PROJECT_ROOT")
+    @RunWith(JUnit3RunnerWithInners.class)
+    public static class Annotation extends AbstractBasicCompletionHandlerTest {
+        public void testAllFilesPresentInAnnotation() throws Exception {
+            KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("idea/idea-completion/testData/handlers/basic/annotation"), Pattern.compile("^(.+)\\.kt$"), true);
+        }
+
+        @TestMetadata("AnnotationInBrackets.kt")
+        public void testAnnotationInBrackets() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/annotation/AnnotationInBrackets.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("AnnotationInClassAddImport.kt")
+        public void testAnnotationInClassAddImport() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/annotation/AnnotationInClassAddImport.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("AnnotationInCompanionObjectAddImport.kt")
+        public void testAnnotationInCompanionObjectAddImport() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/annotation/AnnotationInCompanionObjectAddImport.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("KT12077.kt")
+        public void testKT12077() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/annotation/KT12077.kt");
+            doTest(fileName);
+        }
     }
 
     @TestMetadata("idea/idea-completion/testData/handlers/basic/callableReference")
@@ -709,6 +730,24 @@ public class BasicCompletionHandlerTestGenerated extends AbstractBasicCompletion
             KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("idea/idea-completion/testData/handlers/basic/stringTemplate"), Pattern.compile("^(.+)\\.kt$"), true);
         }
 
+        @TestMetadata("GlobalVal.kt")
+        public void testGlobalVal() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/stringTemplate/GlobalVal.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("GlobalValInCurlyBraces.kt")
+        public void testGlobalValInCurlyBraces() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/stringTemplate/GlobalValInCurlyBraces.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("InsertCurlyBracesBeforeLetter.kt")
+        public void testInsertCurlyBracesBeforeLetter() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/stringTemplate/InsertCurlyBracesBeforeLetter.kt");
+            doTest(fileName);
+        }
+
         @TestMetadata("NotEmptyPrefix.kt")
         public void testNotEmptyPrefix() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/stringTemplate/NotEmptyPrefix.kt");
@@ -718,6 +757,12 @@ public class BasicCompletionHandlerTestGenerated extends AbstractBasicCompletion
         @TestMetadata("Replace.kt")
         public void testReplace() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/stringTemplate/Replace.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("ValInObject.kt")
+        public void testValInObject() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/handlers/basic/stringTemplate/ValInObject.kt");
             doTest(fileName);
         }
     }

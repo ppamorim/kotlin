@@ -46,6 +46,7 @@ messages/**)
 -libraryjars '<jssejar>'
 -libraryjars '<bootstrap.runtime>'
 -libraryjars '<bootstrap.reflect>'
+-libraryjars '<bootstrap.script.runtime>'
 
 -target 1.6
 -dontoptimize
@@ -128,7 +129,6 @@ messages/**)
 -keep class com.intellij.util.io.IOUtil { public *; }
 -keep class com.intellij.openapi.util.io.FileUtil { public *; }
 -keep class com.intellij.util.SystemProperties { public *; }
--keep class jsr166e.extra.SequenceLock { *; }
 -keep class com.intellij.util.containers.hash.LinkedHashMap { *; }
 -keep class com.intellij.util.containers.ConcurrentIntObjectMap { *; }
 -keep class com.intellij.util.containers.ComparatorUtil { *; }

@@ -33,7 +33,10 @@ import org.jetbrains.kotlin.resolve.constants.ConstantValue;
 import org.jetbrains.kotlin.resolve.constants.StringValue;
 import org.jetbrains.kotlin.resolve.scopes.DescriptorKindFilter;
 import org.jetbrains.kotlin.resolve.scopes.MemberScope;
-import org.jetbrains.kotlin.types.*;
+import org.jetbrains.kotlin.types.ErrorUtils;
+import org.jetbrains.kotlin.types.KotlinType;
+import org.jetbrains.kotlin.types.TypeConstructor;
+import org.jetbrains.kotlin.types.TypeUtils;
 import org.jetbrains.kotlin.types.checker.KotlinTypeChecker;
 
 import java.util.*;
@@ -46,9 +49,10 @@ public class DescriptorUtils {
     public static final Name ENUM_VALUES = Name.identifier("values");
     public static final Name ENUM_VALUE_OF = Name.identifier("valueOf");
     public static final FqName JVM_NAME = new FqName("kotlin.jvm.JvmName");
-    public static final FqName VOLATILE = new FqName("kotlin.jvm.Volatile");
-    public static final FqName SYNCHRONIZED = new FqName("kotlin.jvm.Synchronized");
-    public static final FqName CONTINUATION_INTERFACE_FQ_NAME = new FqName("kotlin.coroutines.Continuation");
+    private static final FqName VOLATILE = new FqName("kotlin.jvm.Volatile");
+    private static final FqName SYNCHRONIZED = new FqName("kotlin.jvm.Synchronized");
+    public static final FqName CONTINUATION_INTERFACE_FQ_NAME =
+            KotlinBuiltIns.COROUTINES_PACKAGE_FQ_NAME.child(Name.identifier("Continuation"));
 
     private DescriptorUtils() {
     }
@@ -418,8 +422,8 @@ public class DescriptorUtils {
 
     /**
      * Given a fake override, finds any declaration of it in the overridden descriptors. Keep in mind that there may be many declarations
-     * of the fake override in the supertypes, this method finds just the only one.
-     * TODO: probably all call-sites of this method are wrong, they should handle all super-declarations
+     * of the fake override in the supertypes, this method finds just only one of them.
+     * TODO: probably some call-sites of this method are wrong, they should handle all super-declarations
      */
     @NotNull
     @SuppressWarnings("unchecked")
@@ -466,6 +470,9 @@ public class DescriptorUtils {
         return classDescriptor.getModality() != Modality.FINAL || classDescriptor.getKind() == ClassKind.ENUM_CLASS;
     }
 
+    /**
+     * @return original (not substituted) descriptors without any duplicates
+     */
     @NotNull
     @SuppressWarnings("unchecked")
     public static <D extends CallableDescriptor> Set<D> getAllOverriddenDescriptors(@NotNull D f) {
@@ -478,7 +485,7 @@ public class DescriptorUtils {
         if (result.contains(current)) return;
         for (CallableDescriptor callableDescriptor : current.getOriginal().getOverriddenDescriptors()) {
             @SuppressWarnings("unchecked")
-            D descriptor = (D) callableDescriptor;
+            D descriptor = (D) callableDescriptor.getOriginal();
             collectAllOverriddenDescriptors(descriptor, result);
             result.add(descriptor);
         }
@@ -514,7 +521,11 @@ public class DescriptorUtils {
 
     @Nullable
     public static String getJvmName(@NotNull Annotated annotated) {
-        AnnotationDescriptor jvmNameAnnotation = getAnnotationByFqName(annotated.getAnnotations(), JVM_NAME);
+        return getJvmName(getJvmNameAnnotation(annotated));
+    }
+
+    @Nullable
+    public static String getJvmName(@Nullable AnnotationDescriptor jvmNameAnnotation) {
         if (jvmNameAnnotation == null) return null;
 
         Map<ValueParameterDescriptor, ConstantValue<?>> arguments = jvmNameAnnotation.getAllValueArguments();

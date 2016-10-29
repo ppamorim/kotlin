@@ -20,8 +20,9 @@ import com.google.common.collect.ImmutableSet
 import com.google.common.collect.Sets
 import com.intellij.psi.PsiElement
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
-import org.jetbrains.kotlin.config.LanguageFeatureSettings
+import org.jetbrains.kotlin.config.LanguageVersionSettings
 import org.jetbrains.kotlin.descriptors.*
+import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptor
 import org.jetbrains.kotlin.descriptors.annotations.Annotations
 import org.jetbrains.kotlin.diagnostics.DiagnosticFactory0
 import org.jetbrains.kotlin.diagnostics.Errors
@@ -29,10 +30,10 @@ import org.jetbrains.kotlin.diagnostics.Errors.*
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.visibilityModifier
-import org.jetbrains.kotlin.resolve.BindingContext.TYPE
-import org.jetbrains.kotlin.resolve.BindingContext.TYPE_PARAMETER
+import org.jetbrains.kotlin.resolve.BindingContext.*
 import org.jetbrains.kotlin.resolve.DescriptorUtils.classCanHaveAbstractMembers
 import org.jetbrains.kotlin.resolve.DescriptorUtils.classCanHaveOpenMembers
+import org.jetbrains.kotlin.resolve.source.KotlinSourceElement
 import org.jetbrains.kotlin.types.*
 import org.jetbrains.kotlin.types.checker.KotlinTypeChecker
 import org.jetbrains.kotlin.types.typeUtil.*
@@ -73,10 +74,10 @@ internal class DeclarationsCheckerBuilder(
         private val originalModifiersChecker: ModifiersChecker,
         private val annotationChecker: AnnotationChecker,
         private val identifierChecker: IdentifierChecker,
-        private val languageFeatureSettings: LanguageFeatureSettings
+        private val languageVersionSettings: LanguageVersionSettings
 ) {
     fun withTrace(trace: BindingTrace) =
-            DeclarationsChecker(descriptorResolver, originalModifiersChecker, annotationChecker, identifierChecker, trace, languageFeatureSettings)
+            DeclarationsChecker(descriptorResolver, originalModifiersChecker, annotationChecker, identifierChecker, trace, languageVersionSettings)
 }
 
 class DeclarationsChecker(
@@ -85,7 +86,7 @@ class DeclarationsChecker(
         private val annotationChecker: AnnotationChecker,
         private val identifierChecker: IdentifierChecker,
         private val trace: BindingTrace,
-        private val languageFeatureSettings: LanguageFeatureSettings
+        private val languageVersionSettings: LanguageVersionSettings
 ) {
 
     private val modifiersChecker = modifiersChecker.withTrace(trace)
@@ -143,16 +144,22 @@ class DeclarationsChecker(
         }
 
         for ((declaration, typeAliasDescriptor) in bodiesResolveContext.typeAliases.entries) {
-            checkTypeAliasDeclaration(typeAliasDescriptor, declaration)
+            checkTypeAliasDeclaration(declaration, typeAliasDescriptor)
             modifiersChecker.checkModifiersForDeclaration(declaration, typeAliasDescriptor)
             exposedChecker.checkTypeAlias(declaration, typeAliasDescriptor)
         }
     }
 
-    private fun checkTypeAliasDeclaration(typeAliasDescriptor: TypeAliasDescriptor, declaration: KtTypeAlias) {
+    fun checkLocalTypeAliasDeclaration(declaration: KtTypeAlias, typeAliasDescriptor: TypeAliasDescriptor) {
+        checkTypeAliasDeclaration(declaration, typeAliasDescriptor)
+        modifiersChecker.checkModifiersForDeclaration(declaration, typeAliasDescriptor)
+        exposedChecker.checkTypeAlias(declaration, typeAliasDescriptor)
+    }
+
+    private fun checkTypeAliasDeclaration(declaration: KtTypeAlias, typeAliasDescriptor: TypeAliasDescriptor) {
         val typeReference = declaration.getTypeReference() ?: return
 
-        checkTypeAliasExpansion(typeAliasDescriptor, declaration)
+        checkTypeAliasExpansion(declaration, typeAliasDescriptor)
 
         val expandedType = typeAliasDescriptor.expandedType
         if (expandedType.isError) return
@@ -209,15 +216,20 @@ class DeclarationsChecker(
                 trace.report(UPPER_BOUND_VIOLATED_IN_TYPEALIAS_EXPANSION.on(typeReference, bound, argument, typeParameter))
             }
         }
+
+        override fun repeatedAnnotation(annotation: AnnotationDescriptor) {
+            val annotationEntry = (annotation.source as? KotlinSourceElement)?.psi as? KtAnnotationEntry ?: return
+            trace.report(REPEATED_ANNOTATION.on(annotationEntry))
+        }
     }
 
-    private fun checkTypeAliasExpansion(typeAliasDescriptor: TypeAliasDescriptor, declaration: KtTypeAlias) {
+    private fun checkTypeAliasExpansion(declaration: KtTypeAlias, typeAliasDescriptor: TypeAliasDescriptor) {
         val typeAliasExpansion = TypeAliasExpansion.createWithFormalArguments(typeAliasDescriptor)
         val reportStrategy = TypeAliasDeclarationCheckingReportStrategy(trace, typeAliasDescriptor, declaration)
         TypeAliasExpander(reportStrategy).expandWithoutAbbreviation(typeAliasExpansion, Annotations.EMPTY)
     }
 
-    private fun checkConstructorDeclaration(constructorDescriptor: ConstructorDescriptor, declaration: KtDeclaration) {
+    private fun checkConstructorDeclaration(constructorDescriptor: ClassConstructorDescriptor, declaration: KtDeclaration) {
         declaration.checkTypeReferences()
         modifiersChecker.checkModifiersForDeclaration(declaration, constructorDescriptor)
         identifierChecker.checkDeclaration(declaration, trace)
@@ -225,7 +237,7 @@ class DeclarationsChecker(
         checkConstructorVisibility(constructorDescriptor, declaration)
     }
 
-    private fun checkConstructorVisibility(constructorDescriptor: ConstructorDescriptor, declaration: KtDeclaration) {
+    private fun checkConstructorVisibility(constructorDescriptor: ClassConstructorDescriptor, declaration: KtDeclaration) {
         val visibilityModifier = declaration.visibilityModifier()
         if (visibilityModifier != null && visibilityModifier.node?.elementType != KtTokens.PRIVATE_KEYWORD) {
             val classDescriptor = constructorDescriptor.containingDeclaration
@@ -249,7 +261,7 @@ class DeclarationsChecker(
             }
         }
         annotationChecker.check(packageDirective, trace, null)
-        ModifierCheckerCore.check(packageDirective, trace, descriptor = null, languageFeatureSettings = languageFeatureSettings)
+        ModifierCheckerCore.check(packageDirective, trace, descriptor = null, languageVersionSettings = languageVersionSettings)
     }
 
     private fun checkTypesInClassHeader(classOrObject: KtClassOrObject) {
@@ -657,8 +669,8 @@ class DeclarationsChecker(
             }
         }
         else {
-            if (backingFieldRequired && !inTrait && !propertyDescriptor.isLateInit &&
-                trace.bindingContext.get(BindingContext.IS_UNINITIALIZED, propertyDescriptor) ?: false) {
+            val isUninitialized = trace.bindingContext.get(BindingContext.IS_UNINITIALIZED, propertyDescriptor) ?: false
+            if (backingFieldRequired && !inTrait && !propertyDescriptor.isLateInit && isUninitialized) {
                 if (containingDeclaration !is ClassDescriptor || hasAccessorImplementation) {
                     trace.report(MUST_BE_INITIALIZED.on(property))
                 }
@@ -668,6 +680,12 @@ class DeclarationsChecker(
             }
             else if (property.typeReference == null) {
                 trace.report(PROPERTY_WITH_NO_TYPE_NO_INITIALIZER.on(property))
+            }
+            if (backingFieldRequired && !inTrait && propertyDescriptor.isLateInit && !isUninitialized) {
+                if (trace[MUST_BE_LATEINIT, propertyDescriptor] ?: false) {}
+                else {
+                    trace.report(UNNECESSARY_LATEINIT.on(property))
+                }
             }
         }
     }

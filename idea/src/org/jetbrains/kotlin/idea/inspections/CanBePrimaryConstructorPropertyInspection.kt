@@ -16,12 +16,14 @@
 
 package org.jetbrains.kotlin.idea.inspections
 
+import com.intellij.codeInsight.FileModificationService
 import com.intellij.codeInspection.LocalQuickFix
 import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.ProblemHighlightType
 import com.intellij.codeInspection.ProblemsHolder
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElementVisitor
+import org.jetbrains.kotlin.descriptors.ClassConstructorDescriptor
 import org.jetbrains.kotlin.descriptors.ConstructorDescriptor
 import org.jetbrains.kotlin.descriptors.ValueParameterDescriptor
 import org.jetbrains.kotlin.idea.caches.resolve.analyzeFully
@@ -46,7 +48,7 @@ class CanBePrimaryConstructorPropertyInspection : AbstractKotlinInspection() {
                 // to prevent some exotic situations
                 if (!assignedDescriptor.annotations.isEmpty() || !assigned.getAnnotationEntries().isEmpty()) return
 
-                val containingConstructor = assignedDescriptor.containingDeclaration as? ConstructorDescriptor ?: return
+                val containingConstructor = assignedDescriptor.containingDeclaration as? ClassConstructorDescriptor ?: return
                 if (containingConstructor.containingDeclaration.isData) return
 
                 val propertyTypeReference = property.typeReference
@@ -77,6 +79,8 @@ class CanBePrimaryConstructorPropertyInspection : AbstractKotlinInspection() {
         override fun getFamilyName() = "Move to constructor"
 
         override fun applyFix(project: Project, descriptor: ProblemDescriptor) {
+            if (!FileModificationService.getInstance().preparePsiElementForWrite(descriptor.psiElement)) return
+
             val commentSaver = CommentSaver(original)
             val isVar = original.isVar
             val modifiers = original.modifierList?.text

@@ -136,6 +136,8 @@ public abstract class AbstractIntentionTest extends KotlinCodeInsightTestCase {
 
         String fileText = FileUtil.loadFile(mainFile, true);
 
+        assertTrue("\"<caret>\" is missing in file \"" + mainFile + "\"", fileText.contains("<caret>"));
+
         String minJavaVersion = InTextDirectivesUtils.findStringWithPrefixes(fileText, "// MIN_JAVA_VERSION: ");
         if (minJavaVersion != null && !SystemInfo.isJavaVersionAtLeast(minJavaVersion)) return;
 
@@ -238,7 +240,7 @@ public abstract class AbstractIntentionTest extends KotlinCodeInsightTestCase {
             assertEquals("Failure message mismatch.", shouldFailString, StringUtil.join(e.getMessages(), ", "));
         }
         catch (CommonRefactoringUtil.RefactoringErrorHintException e) {
-            assertEquals("Failure message mismatch.", shouldFailString, e.getMessage());
+            assertEquals("Failure message mismatch.", shouldFailString, e.getMessage().replace('\n', ' '));
         }
     }
 

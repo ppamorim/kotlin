@@ -32,10 +32,14 @@ import org.jetbrains.kotlin.analyzer.EmptyResolverForProject
 import org.jetbrains.kotlin.builtins.DefaultBuiltIns
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.caches.resolve.KotlinCacheService
+import org.jetbrains.kotlin.config.LanguageFeature
+import org.jetbrains.kotlin.config.LanguageVersionSettings
+import org.jetbrains.kotlin.container.get
 import org.jetbrains.kotlin.container.getService
 import org.jetbrains.kotlin.context.GlobalContext
 import org.jetbrains.kotlin.context.GlobalContextImpl
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptor
+import org.jetbrains.kotlin.idea.core.script.ScriptDependenciesModificationTracker
 import org.jetbrains.kotlin.idea.project.AnalyzerFacadeProvider
 import org.jetbrains.kotlin.idea.project.TargetPlatformDetector
 import org.jetbrains.kotlin.idea.project.outOfBlockModificationCount
@@ -49,6 +53,7 @@ import org.jetbrains.kotlin.resolve.TargetPlatform
 import org.jetbrains.kotlin.resolve.diagnostics.KotlinSuppressCache
 import org.jetbrains.kotlin.resolve.jvm.platform.JvmPlatform
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
+import org.jetbrains.kotlin.script.KotlinScriptExternalDependencies
 import org.jetbrains.kotlin.utils.addToStdlib.firstIsInstanceOrNull
 import org.jetbrains.kotlin.utils.addToStdlib.sumByLong
 import java.lang.AssertionError
@@ -71,14 +76,14 @@ class KotlinCacheServiceImpl(val project: Project) : KotlinCacheService {
             }
 
 
-    private val facadesForScriptDependencies: SLRUCache<ComparableScriptDependencies, ProjectResolutionFacade> =
-            object : SLRUCache<ComparableScriptDependencies, ProjectResolutionFacade>(2, 3) {
-                override fun createValue(key: ComparableScriptDependencies?): ProjectResolutionFacade {
+    private val facadesForScriptDependencies: SLRUCache<KotlinScriptExternalDependencies, ProjectResolutionFacade> =
+            object : SLRUCache<KotlinScriptExternalDependencies, ProjectResolutionFacade>(2, 3) {
+                override fun createValue(key: KotlinScriptExternalDependencies?): ProjectResolutionFacade {
                     return createFacadeForScriptDependencies(ScriptDependenciesModuleInfo(project, key))
                 }
             }
 
-    private fun getFacadeForScriptDependencies(dependencies: ComparableScriptDependencies?) = synchronized(facadesForScriptDependencies) {
+    private fun getFacadeForScriptDependencies(dependencies: KotlinScriptExternalDependencies?) = synchronized(facadesForScriptDependencies) {
         facadesForScriptDependencies.get(dependencies)
     }
 
@@ -102,7 +107,8 @@ class KotlinCacheServiceImpl(val project: Project) : KotlinCacheService {
                         //TODO: provide correct trackers
                         dependencies = listOf(
                                 LibraryModificationTracker.getInstance(project),
-                                ProjectRootModificationTracker.getInstance(project)
+                                ProjectRootModificationTracker.getInstance(project),
+                                ScriptDependenciesModificationTracker.getInstance(project)
                         ),
                         moduleFilter = { it == dependenciesModuleInfo },
                         syntheticFiles = syntheticFiles
@@ -381,9 +387,12 @@ private fun globalResolveSessionProvider(
 
     if (newBuiltIns is JvmBuiltIns) {
         val sdkInfo = SdkInfo(project, sdk!!)
-        newBuiltIns.setOwnerModuleDescriptor(moduleResolverProvider.resolverForProject.descriptorForModule(sdkInfo))
+        newBuiltIns.initialize(
+                moduleResolverProvider.resolverForProject.descriptorForModule(sdkInfo),
+                moduleResolverProvider.resolverForProject.resolverForModule(sdkInfo)
+                        .componentProvider.get<LanguageVersionSettings>()
+                        .supportsFeature(LanguageFeature.AdditionalBuiltInsMembers))
     }
 
     moduleResolverProvider
 }
-

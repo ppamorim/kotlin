@@ -16,6 +16,7 @@
 
 package org.jetbrains.kotlin.codegen
 
+import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.builtins.ReflectionTypes
 import org.jetbrains.kotlin.codegen.AsmUtil.method
 import org.jetbrains.kotlin.codegen.binding.CodegenBinding
@@ -26,14 +27,16 @@ import org.jetbrains.kotlin.descriptors.annotations.Annotations
 import org.jetbrains.kotlin.descriptors.impl.LocalVariableDescriptor
 import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.load.java.JvmAbi
-import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.resolve.DescriptorFactory
+import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.PropertyImportedFromObject
 import org.jetbrains.kotlin.resolve.descriptorUtil.getSuperClassNotAny
 import org.jetbrains.kotlin.resolve.jvm.AsmTypes.*
 import org.jetbrains.kotlin.resolve.jvm.diagnostics.JvmDeclarationOrigin
 import org.jetbrains.kotlin.resolve.jvm.jvmSignature.JvmMethodSignature
+import org.jetbrains.kotlin.types.*
+import org.jetbrains.kotlin.types.typeUtil.builtIns
 import org.jetbrains.kotlin.util.OperatorNameConventions
 import org.jetbrains.kotlin.utils.sure
 import org.jetbrains.org.objectweb.asm.Opcodes.*
@@ -110,7 +113,7 @@ class PropertyReferenceCodegen(
         }
 
         generateMethod("property reference getSignature", ACC_PUBLIC, method("getSignature", JAVA_STRING_TYPE)) {
-            aconst(getPropertyReferenceSignature(target as VariableDescriptorWithAccessors, state))
+            generateCallableReferenceSignature(this, target, state)
         }
 
         if (!isLocalDelegatedProperty) {
@@ -147,15 +150,7 @@ class PropertyReferenceCodegen(
 
 
     private fun generateMethod(debugString: String, access: Int, method: Method, generate: InstructionAdapter.() -> Unit) {
-        val mv = v.newMethod(JvmDeclarationOrigin.NO_ORIGIN, access, method.name, method.descriptor, null, null)
-
-        if (state.classBuilderMode == ClassBuilderMode.FULL) {
-            val iv = InstructionAdapter(mv)
-            iv.visitCode()
-            iv.generate()
-            iv.areturn(method.returnType)
-            FunctionCodegen.endVisit(mv, debugString, element)
-        }
+        v.generateMethod(debugString, access, method, element, JvmDeclarationOrigin.NO_ORIGIN, state, generate)
     }
 
     override fun generateKotlinMetadataAnnotation() {
@@ -179,15 +174,31 @@ class PropertyReferenceCodegen(
     }
 
     companion object {
-        @JvmStatic
-        fun getPropertyReferenceSignature(property: VariableDescriptorWithAccessors, state: GenerationState): String {
-            val getter =
-                    property.getter ?: DescriptorFactory.createDefaultGetter(property as PropertyDescriptor, Annotations.EMPTY).apply {
-                        initialize(property.type)
-                    }
 
-            val method = state.typeMapper.mapAsmMethod(getter.original)
-            return method.name + method.descriptor
+        @JvmField
+        val ANY_SUBSTITUTOR = TypeSubstitutor.create(object : TypeSubstitution() {
+            override fun get(key: KotlinType): TypeProjection? {
+                if (KotlinBuiltIns.isUnit(key)) {
+                    return TypeProjectionImpl(key)
+                }
+                return TypeProjectionImpl(key.builtIns.nullableAnyType)
+            }
+        })
+
+        @JvmStatic
+        fun generateCallableReferenceSignature(iv: InstructionAdapter, callable: CallableDescriptor, state: GenerationState) {
+            val accessor = when (callable) {
+                is FunctionDescriptor -> callable
+                is VariableDescriptorWithAccessors ->
+                    callable.getter ?:
+                    DescriptorFactory.createDefaultGetter(callable as PropertyDescriptor, Annotations.EMPTY).apply {
+                        initialize(callable.type)
+                    }
+                else -> error("Unsupported callable reference: $callable")
+            }
+            val declaration = DescriptorUtils.unwrapFakeOverride(accessor).original
+            val method = state.typeMapper.mapAsmMethod(declaration)
+            iv.aconst(method.name + method.descriptor)
         }
 
         @JvmStatic
@@ -210,7 +221,8 @@ class PropertyReferenceCodegen(
 
         @JvmStatic
         fun createFakeOpenDescriptor(getFunction: FunctionDescriptor, classDescriptor: ClassDescriptor): FunctionDescriptor {
-            return getFunction.original.copy(classDescriptor, Modality.OPEN, getFunction.visibility, getFunction.kind, false)
+            val copy = getFunction.original.copy(classDescriptor, Modality.OPEN, getFunction.visibility, getFunction.kind, false)
+            return copy.substitute(ANY_SUBSTITUTOR)!!
         }
 
         @JvmStatic

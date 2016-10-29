@@ -20,13 +20,20 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
 import com.intellij.psi.search.searches.ReferencesSearch
+import com.intellij.refactoring.util.RefactoringUIUtil
 import com.intellij.util.containers.MultiMap
+import org.jetbrains.kotlin.descriptors.CallableMemberDescriptor
+import org.jetbrains.kotlin.descriptors.ClassDescriptor
+import org.jetbrains.kotlin.idea.caches.resolve.resolveToDescriptor
+import org.jetbrains.kotlin.idea.codeInsight.DescriptorToSourceUtilsIde
 import org.jetbrains.kotlin.idea.refactoring.checkConflictsInteractively
 import org.jetbrains.kotlin.idea.refactoring.move.moveDeclarations.*
 import org.jetbrains.kotlin.idea.refactoring.runSynchronouslyWithProgress
+import org.jetbrains.kotlin.idea.util.application.runWriteAction
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.containingClassOrObject
 import org.jetbrains.kotlin.psi.psiUtil.isAncestor
+import org.jetbrains.kotlin.util.findCallableMemberBySignature
 
 class MoveMemberOutOfCompanionObjectIntention : SelfTargetingRangeIntention<KtNamedDeclaration>(KtNamedDeclaration::class.java,
                                                                                                 "Move out of companion object") {
@@ -72,9 +79,19 @@ class MoveMemberOutOfCompanionObjectIntention : SelfTargetingRangeIntention<KtNa
             conflicts.putValue(refElement, "Class instance required: ${refElement.text}")
         }
 
+        val targetClassDescriptor = targetClass.resolveToDescriptor() as ClassDescriptor
+        val callableDescriptor = element.resolveToDescriptor() as CallableMemberDescriptor
+        targetClassDescriptor.findCallableMemberBySignature(callableDescriptor)?.let {
+            DescriptorToSourceUtilsIde.getAnyDeclaration(project, it)
+        }?.let {
+            conflicts.putValue(it, "Class '${targetClass.name}' already contains ${RefactoringUIUtil.getDescription(it, false)}")
+        }
+
         project.checkConflictsInteractively(conflicts) {
-            Mover.Default(element, targetClass)
-            deleteCompanionIfEmpty()
+            runWriteAction {
+                Mover.Default(element, targetClass)
+                deleteCompanionIfEmpty()
+            }
         }
     }
 }

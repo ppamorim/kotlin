@@ -257,6 +257,12 @@ public class MoveTestGenerated extends AbstractMoveTest {
         doTest(fileName);
     }
 
+    @TestMetadata("kotlin/moveFile/moveFileWithoutDeclarations/moveFileWithoutDeclarations.test")
+    public void testKotlin_moveFile_moveFileWithoutDeclarations_MoveFileWithoutDeclarations() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/move/kotlin/moveFile/moveFileWithoutDeclarations/moveFileWithoutDeclarations.test");
+        doTest(fileName);
+    }
+
     @TestMetadata("kotlin/moveFile/moveFileWithoutPackageRename/moveFileWithoutPackageRename.test")
     public void testKotlin_moveFile_moveFileWithoutPackageRename_MoveFileWithoutPackageRename() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/move/kotlin/moveFile/moveFileWithoutPackageRename/moveFileWithoutPackageRename.test");
@@ -308,6 +314,18 @@ public class MoveTestGenerated extends AbstractMoveTest {
     @TestMetadata("kotlin/moveNestedClass/deepProtectedClass/deepProtectedClass.test")
     public void testKotlin_moveNestedClass_deepProtectedClass_DeepProtectedClass() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/move/kotlin/moveNestedClass/deepProtectedClass/deepProtectedClass.test");
+        doTest(fileName);
+    }
+
+    @TestMetadata("kotlin/moveNestedClass/dropEmptyCompanion/dropEmptyCompanion.test")
+    public void testKotlin_moveNestedClass_dropEmptyCompanion_DropEmptyCompanion() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/move/kotlin/moveNestedClass/dropEmptyCompanion/dropEmptyCompanion.test");
+        doTest(fileName);
+    }
+
+    @TestMetadata("kotlin/moveNestedClass/innerToTopLevelAddInstanceParam/innerToTopLevelAddInstanceParam.test")
+    public void testKotlin_moveNestedClass_innerToTopLevelAddInstanceParam_InnerToTopLevelAddInstanceParam() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/move/kotlin/moveNestedClass/innerToTopLevelAddInstanceParam/innerToTopLevelAddInstanceParam.test");
         doTest(fileName);
     }
 
@@ -476,6 +494,12 @@ public class MoveTestGenerated extends AbstractMoveTest {
     @TestMetadata("kotlin/moveTopLevelDeclarations/misc/syntheticMembers/syntheticMembers.test")
     public void testKotlin_moveTopLevelDeclarations_misc_syntheticMembers_SyntheticMembers() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/move/kotlin/moveTopLevelDeclarations/misc/syntheticMembers/syntheticMembers.test");
+        doTest(fileName);
+    }
+
+    @TestMetadata("kotlin/moveTopLevelDeclarations/misc/visibilityConflictInImport/visibilityConflictInImport.test")
+    public void testKotlin_moveTopLevelDeclarations_misc_visibilityConflictInImport_VisibilityConflictInImport() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/move/kotlin/moveTopLevelDeclarations/misc/visibilityConflictInImport/visibilityConflictInImport.test");
         doTest(fileName);
     }
 

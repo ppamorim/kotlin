@@ -66,6 +66,7 @@ abstract class AbstractJvmRuntimeDescriptorLoaderTest : TestCaseWithTmpdir() {
             parameterNameRenderingPolicy = ParameterNameRenderingPolicy.NONE
             includePropertyConstant = false
             verbose = true
+            includeAnnotationArguments = true
             renderDefaultAnnotationArguments = true
             modifiers = DescriptorRendererModifier.ALL
         }
@@ -96,6 +97,7 @@ abstract class AbstractJvmRuntimeDescriptorLoaderTest : TestCaseWithTmpdir() {
                 /* checkPrimaryConstructors = */ fileName.endsWith(".kt"),
                 /* checkPropertyAccessors = */ true,
                 /* includeMethodsOfKotlinAny = */ false,
+                /* renderDeclarationsFromOtherModules = */ true,
                 // Skip Java annotation constructors because order of their parameters is not retained at runtime
                 { descriptor -> !descriptor!!.isJavaAnnotationConstructor() },
                 errorTypesForbidden(), renderer
@@ -115,7 +117,7 @@ abstract class AbstractJvmRuntimeDescriptorLoaderTest : TestCaseWithTmpdir() {
     }
 
     private fun DeclarationDescriptor.isJavaAnnotationConstructor() =
-            this is ConstructorDescriptor &&
+            this is ClassConstructorDescriptor &&
             containingDeclaration is JavaClassDescriptor &&
             containingDeclaration.kind == ClassKind.ANNOTATION_CLASS
 

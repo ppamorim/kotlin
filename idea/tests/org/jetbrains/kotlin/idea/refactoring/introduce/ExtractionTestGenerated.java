@@ -43,6 +43,12 @@ public class ExtractionTestGenerated extends AbstractExtractionTest {
             doIntroduceVariableTest(fileName);
         }
 
+        @TestMetadata("arrayAssignment.kt")
+        public void testArrayAssignment() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/introduceVariable/arrayAssignment.kt");
+            doIntroduceVariableTest(fileName);
+        }
+
         @TestMetadata("callUnderSmartCast.kt")
         public void testCallUnderSmartCast() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/introduceVariable/callUnderSmartCast.kt");
@@ -337,6 +343,12 @@ public class ExtractionTestGenerated extends AbstractExtractionTest {
             doIntroduceVariableTest(fileName);
         }
 
+        @TestMetadata("onAssignmentLHS.kt")
+        public void testOnAssignmentLHS() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/introduceVariable/onAssignmentLHS.kt");
+            doIntroduceVariableTest(fileName);
+        }
+
         @TestMetadata("OneExplicitReceiver.kt")
         public void testOneExplicitReceiver() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/introduceVariable/OneExplicitReceiver.kt");
@@ -367,6 +379,12 @@ public class ExtractionTestGenerated extends AbstractExtractionTest {
             doIntroduceVariableTest(fileName);
         }
 
+        @TestMetadata("selectorAssignment.kt")
+        public void testSelectorAssignment() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/introduceVariable/selectorAssignment.kt");
+            doIntroduceVariableTest(fileName);
+        }
+
         @TestMetadata("Simple.kt")
         public void testSimple() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/introduceVariable/Simple.kt");
@@ -382,6 +400,12 @@ public class ExtractionTestGenerated extends AbstractExtractionTest {
         @TestMetadata("skipClassReference.kt")
         public void testSkipClassReference() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/introduceVariable/skipClassReference.kt");
+            doIntroduceVariableTest(fileName);
+        }
+
+        @TestMetadata("skipUsageInAssignmentLHS.kt")
+        public void testSkipUsageInAssignmentLHS() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/introduceVariable/skipUsageInAssignmentLHS.kt");
             doIntroduceVariableTest(fileName);
         }
 
@@ -1679,6 +1703,12 @@ public class ExtractionTestGenerated extends AbstractExtractionTest {
                 @TestMetadata("evalExpressionWithThrow.kt")
                 public void testEvalExpressionWithThrow() throws Exception {
                     String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractFunction/controlFlow/throws/evalExpressionWithThrow.kt");
+                    doExtractFunctionTest(fileName);
+                }
+
+                @TestMetadata("implicitThrow.kt")
+                public void testImplicitThrow() throws Exception {
+                    String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractFunction/controlFlow/throws/implicitThrow.kt");
                     doExtractFunctionTest(fileName);
                 }
 
@@ -4181,6 +4211,120 @@ public class ExtractionTestGenerated extends AbstractExtractionTest {
         public void testUserTypeDuplicatesWithTypeParameters() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/introduceTypeAlias/userTypeDuplicatesWithTypeParameters.kt");
             doIntroduceTypeAliasTest(fileName);
+        }
+    }
+
+    @TestMetadata("idea/testData/refactoring/extractSuperclass")
+    @TestDataPath("$PROJECT_ROOT")
+    @RunWith(JUnit3RunnerWithInners.class)
+    public static class ExtractSuperclass extends AbstractExtractionTest {
+        @TestMetadata("addSuperclassNoSecondaryConstructors.kt")
+        public void testAddSuperclassNoSecondaryConstructors() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractSuperclass/addSuperclassNoSecondaryConstructors.kt");
+            doExtractSuperclassTest(fileName);
+        }
+
+        @TestMetadata("addSuperclassOnlySecondaryConstructors.kt")
+        public void testAddSuperclassOnlySecondaryConstructors() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractSuperclass/addSuperclassOnlySecondaryConstructors.kt");
+            doExtractSuperclassTest(fileName);
+        }
+
+        @TestMetadata("addSuperclassPrimaryConstructor.kt")
+        public void testAddSuperclassPrimaryConstructor() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractSuperclass/addSuperclassPrimaryConstructor.kt");
+            doExtractSuperclassTest(fileName);
+        }
+
+        @TestMetadata("addTypeParameters.kt")
+        public void testAddTypeParameters() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractSuperclass/addTypeParameters.kt");
+            doExtractSuperclassTest(fileName);
+        }
+
+        @TestMetadata("addTypeParametersWithAbstract.kt")
+        public void testAddTypeParametersWithAbstract() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractSuperclass/addTypeParametersWithAbstract.kt");
+            doExtractSuperclassTest(fileName);
+        }
+
+        public void testAllFilesPresentInExtractSuperclass() throws Exception {
+            KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("idea/testData/refactoring/extractSuperclass"), Pattern.compile("^(.+)\\.(kt|kts)$"), true);
+        }
+
+        @TestMetadata("annotation.kt")
+        public void testAnnotation() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractSuperclass/annotation.kt");
+            doExtractSuperclassTest(fileName);
+        }
+
+        @TestMetadata("enum.kt")
+        public void testEnum() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractSuperclass/enum.kt");
+            doExtractSuperclassTest(fileName);
+        }
+
+        @TestMetadata("interface.kt")
+        public void testInterface() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractSuperclass/interface.kt");
+            doExtractSuperclassTest(fileName);
+        }
+
+        @TestMetadata("privateClass.kt")
+        public void testPrivateClass() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractSuperclass/privateClass.kt");
+            doExtractSuperclassTest(fileName);
+        }
+
+        @TestMetadata("privateMember.kt")
+        public void testPrivateMember() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractSuperclass/privateMember.kt");
+            doExtractSuperclassTest(fileName);
+        }
+
+        @TestMetadata("replaceSuperclass.kt")
+        public void testReplaceSuperclass() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractSuperclass/replaceSuperclass.kt");
+            doExtractSuperclassTest(fileName);
+        }
+    }
+
+    @TestMetadata("idea/testData/refactoring/extractInterface")
+    @TestDataPath("$PROJECT_ROOT")
+    @RunWith(JUnit3RunnerWithInners.class)
+    public static class ExtractInterface extends AbstractExtractionTest {
+        @TestMetadata("addInterface.kt")
+        public void testAddInterface() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractInterface/addInterface.kt");
+            doExtractInterfaceTest(fileName);
+        }
+
+        @TestMetadata("addInterfaceWithAbstract.kt")
+        public void testAddInterfaceWithAbstract() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractInterface/addInterfaceWithAbstract.kt");
+            doExtractInterfaceTest(fileName);
+        }
+
+        @TestMetadata("addTypeParameters.kt")
+        public void testAddTypeParameters() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractInterface/addTypeParameters.kt");
+            doExtractInterfaceTest(fileName);
+        }
+
+        @TestMetadata("addTypeParametersWithAbstract.kt")
+        public void testAddTypeParametersWithAbstract() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractInterface/addTypeParametersWithAbstract.kt");
+            doExtractInterfaceTest(fileName);
+        }
+
+        public void testAllFilesPresentInExtractInterface() throws Exception {
+            KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("idea/testData/refactoring/extractInterface"), Pattern.compile("^(.+)\\.(kt|kts)$"), true);
+        }
+
+        @TestMetadata("annotation.kt")
+        public void testAnnotation() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/extractInterface/annotation.kt");
+            doExtractInterfaceTest(fileName);
         }
     }
 }

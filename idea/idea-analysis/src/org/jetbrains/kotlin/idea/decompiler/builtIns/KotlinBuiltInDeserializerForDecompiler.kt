@@ -48,11 +48,10 @@ class KotlinBuiltInDeserializerForDecompiler(
         val notFoundClasses = NotFoundClasses(storageManager, moduleDescriptor)
 
         deserializationComponents = DeserializationComponents(
-                storageManager, moduleDescriptor, BuiltInsClassDataFinder(proto, nameResolver),
+                storageManager, moduleDescriptor, DeserializationConfiguration.Default, BuiltInsClassDataFinder(proto, nameResolver),
                 AnnotationAndConstantLoaderImpl(moduleDescriptor, notFoundClasses, BuiltInSerializerProtocol), packageFragmentProvider,
                 ResolveEverythingToKotlinAnyLocalClassifierResolver(builtIns), LoggingErrorReporter(LOG),
-                LookupTracker.DO_NOTHING, FlexibleTypeDeserializer.ThrowException, ClassDescriptorFactory.EMPTY,
-                notFoundClasses
+                LookupTracker.DO_NOTHING, FlexibleTypeDeserializer.ThrowException, emptyList(), notFoundClasses
         )
     }
 

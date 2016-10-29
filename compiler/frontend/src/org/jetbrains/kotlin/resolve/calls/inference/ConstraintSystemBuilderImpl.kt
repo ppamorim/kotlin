@@ -37,6 +37,8 @@ import org.jetbrains.kotlin.types.checker.TypeCheckingProcedureCallbacks
 import org.jetbrains.kotlin.types.typeUtil.builtIns
 import org.jetbrains.kotlin.types.typeUtil.defaultProjections
 import org.jetbrains.kotlin.types.typeUtil.isDefaultBound
+import java.lang.IllegalArgumentException
+import java.lang.IllegalStateException
 import java.util.*
 
 open class ConstraintSystemBuilderImpl(private val mode: Mode = ConstraintSystemBuilderImpl.Mode.INFERENCE) : ConstraintSystem.Builder {
@@ -152,13 +154,10 @@ open class ConstraintSystemBuilderImpl(private val mode: Mode = ConstraintSystem
             }
 
             override fun capture(type: KotlinType, typeProjection: TypeProjection): Boolean {
-                if (isMyTypeVariable(typeProjection.type)) return false
+                if (isMyTypeVariable(typeProjection.type) || depth > 0) return false
                 val myTypeVariable = getMyTypeVariable(type)
 
                 if (myTypeVariable != null && constraintPosition.isParameter()) {
-                    if (depth > 0) {
-                        errors.add(CannotCapture(constraintPosition, myTypeVariable))
-                    }
                     generateTypeParameterCaptureConstraint(myTypeVariable, typeProjection, newConstraintContext, type.isMarkedNullable)
                     return true
                 }
@@ -449,5 +448,5 @@ internal fun createTypeForFunctionPlaceholder(
         functionPlaceholderTypeConstructor.argumentTypes
     }
     val receiverType = if (isExtension) DONT_CARE else null
-    return createFunctionType(functionPlaceholder.builtIns, Annotations.EMPTY, receiverType, newArgumentTypes, DONT_CARE)
+    return createFunctionType(functionPlaceholder.builtIns, Annotations.EMPTY, receiverType, newArgumentTypes, null, DONT_CARE)
 }

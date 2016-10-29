@@ -21,6 +21,7 @@ import com.intellij.psi.PsiElement;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.kotlin.descriptors.*;
+import org.jetbrains.kotlin.descriptors.impl.TypeAliasConstructorDescriptor;
 import org.jetbrains.kotlin.js.config.JsConfig;
 import org.jetbrains.kotlin.js.translate.intrinsic.Intrinsics;
 import org.jetbrains.kotlin.js.translate.utils.TranslationUtils;
@@ -229,9 +230,9 @@ public class TranslationContext {
         return staticContext.getQualifiedReference(packageFqName);
     }
 
-    @Nullable
-    public JsExpression getQualifierForDescriptor(@NotNull DeclarationDescriptor descriptor) {
-        return staticContext.getQualifierForDescriptor(descriptor);
+    @NotNull
+    public JsName getNameForBackingField(@NotNull PropertyDescriptor property) {
+        return staticContext.getNameForBackingField(property);
     }
 
     @NotNull
@@ -309,6 +310,10 @@ public class TranslationContext {
 
     public void addStatementToCurrentBlock(@NotNull JsStatement statement) {
         dynamicContext.jsBlock().getStatements().add(statement);
+    }
+
+    public void addStatementsToCurrentBlock(@NotNull Collection<JsStatement> statements) {
+        dynamicContext.jsBlock().getStatements().addAll(statements);
     }
 
     public void addStatementsToCurrentBlockFrom(@NotNull TranslationContext context) {
@@ -459,6 +464,11 @@ public class TranslationContext {
 
     @Nullable
     public List<DeclarationDescriptor> getClassOrConstructorClosure(@NotNull MemberDescriptor classOrConstructor) {
+        if (classOrConstructor instanceof TypeAliasConstructorDescriptor) {
+            ClassConstructorDescriptor constructorDescriptor = ((TypeAliasConstructorDescriptor) classOrConstructor).getUnderlyingConstructorDescriptor();
+            return getClassOrConstructorClosure(constructorDescriptor);
+        }
+
         List<DeclarationDescriptor> result = staticContext.getClassOrConstructorClosure(classOrConstructor);
         if (result == null &&
             classOrConstructor instanceof ConstructorDescriptor &&
@@ -533,12 +543,12 @@ public class TranslationContext {
         return result;
     }
 
-    public boolean shouldBeDeferred(@NotNull ConstructorDescriptor constructor) {
+    public boolean shouldBeDeferred(@NotNull ClassConstructorDescriptor constructor) {
         ClassDescriptor classDescriptor = constructor.getContainingDeclaration();
         return staticContext.getDeferredCallSites().containsKey(classDescriptor);
     }
 
-    public void deferConstructorCall(@NotNull ConstructorDescriptor constructor, @NotNull List<JsExpression> invocationArgs) {
+    public void deferConstructorCall(@NotNull ClassConstructorDescriptor constructor, @NotNull List<JsExpression> invocationArgs) {
         ClassDescriptor classDescriptor = constructor.getContainingDeclaration();
         List<DeferredCallSite> callSites = staticContext.getDeferredCallSites().get(classDescriptor);
         if (callSites == null) throw new IllegalStateException("This method should be call only when `shouldBeDeferred` method " +

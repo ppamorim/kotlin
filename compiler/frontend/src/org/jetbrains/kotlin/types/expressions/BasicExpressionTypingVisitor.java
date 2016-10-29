@@ -56,6 +56,7 @@ import org.jetbrains.kotlin.resolve.calls.tasks.ExplicitReceiverKind;
 import org.jetbrains.kotlin.resolve.calls.tasks.ResolutionCandidate;
 import org.jetbrains.kotlin.resolve.calls.tasks.TracingStrategy;
 import org.jetbrains.kotlin.resolve.calls.util.CallMaker;
+import org.jetbrains.kotlin.resolve.checkers.UnderscoreChecker;
 import org.jetbrains.kotlin.resolve.constants.*;
 import org.jetbrains.kotlin.resolve.scopes.LexicalScopeKind;
 import org.jetbrains.kotlin.resolve.scopes.LexicalWritableScope;
@@ -451,6 +452,10 @@ public class BasicExpressionTypingVisitor extends ExpressionTypingVisitor {
                 supertype = components.typeResolver.resolveType(context.scope, superTypeQualifier, context.trace, true);
             }
 
+            if (classifierCandidate instanceof TypeAliasDescriptor) {
+                classifierCandidate = ((TypeAliasDescriptor) classifierCandidate).getClassDescriptor();
+            }
+
             if (supertype != null) {
                 if (supertypes.contains(supertype)) {
                     result = supertype;
@@ -605,9 +610,11 @@ public class BasicExpressionTypingVisitor extends ExpressionTypingVisitor {
         trace.record(RESOLVED_CALL, call, resolvedCall);
         trace.record(CALL, expression, call);
 
-        CallCheckerContext callCheckerContext = new CallCheckerContext(context, components.languageFeatureSettings);
-        for (CallChecker checker : components.callCheckers) {
-            checker.check(resolvedCall, expression, callCheckerContext);
+        if (context.trace.wantsDiagnostics()) {
+            CallCheckerContext callCheckerContext = new CallCheckerContext(context, components.languageVersionSettings);
+            for (CallChecker checker : components.callCheckers) {
+                checker.check(resolvedCall, expression, callCheckerContext);
+            }
         }
     }
 
@@ -863,7 +870,7 @@ public class BasicExpressionTypingVisitor extends ExpressionTypingVisitor {
         KtSimpleNameExpression labelExpression = expression.getTargetLabel();
         if (labelExpression != null) {
             PsiElement labelIdentifier = labelExpression.getIdentifier();
-            UnderscoreChecker.INSTANCE.checkIdentifier(labelIdentifier, context.trace);
+            UnderscoreChecker.INSTANCE.checkIdentifier(labelIdentifier, context.trace, components.languageVersionSettings);
         }
         KtExpression baseExpression = expression.getBaseExpression();
         if (baseExpression == null) return TypeInfoFactoryKt.noTypeInfo(context);
@@ -906,10 +913,10 @@ public class BasicExpressionTypingVisitor extends ExpressionTypingVisitor {
             if (KtTokens.AUGMENTED_ASSIGNMENTS.contains(operationType)
                     || operationType == KtTokens.PLUSPLUS || operationType == KtTokens.MINUSMINUS) {
                 ResolvedCall<?> resolvedCall = ignoreReportsTrace.get(INDEXED_LVALUE_SET, expression);
-                if (resolvedCall != null) {
+                if (resolvedCall != null && trace.wantsDiagnostics()) {
                     // Call must be validated with the actual, not temporary trace in order to report operator diagnostic
                     // Only unary assignment expressions (++, --) and +=/... must be checked, normal assignments have the proper trace
-                    CallCheckerContext callCheckerContext = new CallCheckerContext(context, trace, components.languageFeatureSettings);
+                    CallCheckerContext callCheckerContext = new CallCheckerContext(context, trace, components.languageVersionSettings);
                     for (CallChecker checker : components.callCheckers) {
                         checker.check(resolvedCall, expression, callCheckerContext);
                     }
@@ -975,9 +982,11 @@ public class BasicExpressionTypingVisitor extends ExpressionTypingVisitor {
         );
         resolvedCall.markCallAsCompleted();
 
-        CallCheckerContext callCheckerContext = new CallCheckerContext(context, components.languageFeatureSettings);
-        for (CallChecker checker : components.callCheckers) {
-            checker.check(resolvedCall, expression, callCheckerContext);
+        if (context.trace.wantsDiagnostics()) {
+            CallCheckerContext callCheckerContext = new CallCheckerContext(context, components.languageVersionSettings);
+            for (CallChecker checker : components.callCheckers) {
+                checker.check(resolvedCall, expression, callCheckerContext);
+            }
         }
     }
 
@@ -1520,16 +1529,55 @@ public class BasicExpressionTypingVisitor extends ExpressionTypingVisitor {
     }
 
     public KotlinTypeInfo visitAnnotatedExpression(KtAnnotatedExpression expression, ExpressionTypingContext context, boolean isStatement) {
-        if (!(expression.getBaseExpression() instanceof KtObjectLiteralExpression)) {
-            // annotations on object literals are resolved later inside LazyClassDescriptor
-            components.annotationResolver.resolveAnnotationsWithArguments(context.scope, expression.getAnnotationEntries(), context.trace);
-        }
+        resolveAnnotationsOnExpression(expression, context);
 
         KtExpression baseExpression = expression.getBaseExpression();
         if (baseExpression == null) {
             return TypeInfoFactoryKt.noTypeInfo(context);
         }
         return facade.getTypeInfo(baseExpression, context, isStatement);
+    }
+
+    protected void resolveAnnotationsOnExpression(KtAnnotatedExpression expression, ExpressionTypingContext context) {
+        if (isAnnotatedExpressionInBlockLevelBinary(expression)) {
+            context.trace.report(ANNOTATIONS_ON_BLOCK_LEVEL_EXPRESSION_ON_THE_SAME_LINE.on(expression));
+        }
+
+        if (!(expression.getBaseExpression() instanceof KtObjectLiteralExpression)) {
+            // annotations on object literals are resolved later inside LazyClassDescriptor
+            components.annotationResolver.resolveAnnotationsWithArguments(context.scope, expression.getAnnotationEntries(), context.trace);
+        }
+    }
+
+    private static boolean isAnnotatedExpressionInBlockLevelBinary(KtAnnotatedExpression annotatedExpression) {
+        PsiElement current = annotatedExpression;
+        PsiElement parent = current.getParent();
+
+        // Here we implicitly assume that grammar rules are:
+        // blockLevelExpression = annotations expression
+        // expression = binaryExpression
+        // binaryExpression = prefixExpression <op> prefixExpression
+        // prefixExpression = annotations expression
+
+        // If there is no binary parent, annotations are being parsed the same way independently of newline after them
+        if (!(parent instanceof KtBinaryExpression)) return false;
+
+        while (parent instanceof KtBinaryExpression) {
+            // if we came not from the left parent, there's no need to report an error
+            if (((KtBinaryExpression) parent).getLeft() != current) {
+                return false;
+            }
+            current = parent;
+            parent = parent.getParent();
+        }
+
+        return isParentForBlockLevelExpression(parent);
+    }
+
+    private static boolean isParentForBlockLevelExpression(@Nullable PsiElement parent) {
+        return parent instanceof KtBlockExpression ||
+               parent instanceof KtContainerNodeForControlStructureBody ||
+               parent instanceof KtWhenEntry;
     }
 
     @Override

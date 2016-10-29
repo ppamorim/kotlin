@@ -16,6 +16,7 @@
 
 package org.jetbrains.kotlin.idea.inspections
 
+import com.intellij.codeInsight.FileModificationService
 import com.intellij.codeInsight.intention.LowPriorityAction
 import com.intellij.codeInspection.*
 import com.intellij.openapi.diagnostic.Logger
@@ -28,6 +29,7 @@ import com.intellij.psi.PsiElementVisitor
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.util.ui.UIUtil
+import org.jetbrains.kotlin.config.LanguageVersionSettings
 import org.jetbrains.kotlin.descriptors.FunctionDescriptor
 import org.jetbrains.kotlin.descriptors.PropertyDescriptor
 import org.jetbrains.kotlin.idea.caches.resolve.analyze
@@ -37,6 +39,7 @@ import org.jetbrains.kotlin.idea.core.targetDescriptors
 import org.jetbrains.kotlin.idea.imports.importableFqName
 import org.jetbrains.kotlin.idea.quickfix.KotlinQuickFixAction
 import org.jetbrains.kotlin.idea.references.KtSimpleNameReference
+import org.jetbrains.kotlin.idea.resolve.frontendService
 import org.jetbrains.kotlin.idea.stubindex.KotlinSourceFilterScope
 import org.jetbrains.kotlin.idea.util.application.executeWriteCommand
 import org.jetbrains.kotlin.idea.util.application.runReadAction
@@ -66,11 +69,11 @@ class ConflictingExtensionPropertyInspection : AbstractKotlinInspection(), Clean
                     val nameElement = property.nameIdentifier ?: return
                     val propertyDescriptor = property.resolveToDescriptor() as? PropertyDescriptor ?: return
 
-                    val syntheticScopes = resolutionFacade.getFrontendService(SyntheticScopes::class.java)
+                    val syntheticScopes = resolutionFacade.frontendService<SyntheticScopes>()
                     val conflictingExtension = conflictingSyntheticExtension(propertyDescriptor, syntheticScopes) ?: return
 
                     // don't report on hidden declarations
-                    if (propertyDescriptor.isHiddenInResolution()) return
+                    if (propertyDescriptor.isHiddenInResolution(resolutionFacade.frontendService<LanguageVersionSettings>())) return
 
                     val fixes = createFixes(property, conflictingExtension, isOnTheFly)
 
@@ -202,6 +205,7 @@ class ConflictingExtensionPropertyInspection : AbstractKotlinInspection(), Clean
                                 UIUtil.invokeLaterIfNeeded {
                                     project.executeWriteCommand(text) {
                                         importsToDelete.forEach { import ->
+                                            if (!FileModificationService.getInstance().preparePsiElementForWrite(import)) return@forEach
                                             try {
                                                 import.delete()
                                             }

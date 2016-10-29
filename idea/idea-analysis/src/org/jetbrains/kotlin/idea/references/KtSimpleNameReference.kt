@@ -40,9 +40,8 @@ import org.jetbrains.kotlin.psi.psiUtil.getParentOfTypeAndBranch
 import org.jetbrains.kotlin.psi.psiUtil.getQualifiedElement
 import org.jetbrains.kotlin.psi.psiUtil.getQualifiedElementSelector
 import org.jetbrains.kotlin.psi.psiUtil.startOffset
-import org.jetbrains.kotlin.renderer.render
 import org.jetbrains.kotlin.resolve.BindingContext
-import org.jetbrains.kotlin.resolve.dataClassUtils.isComponentLike
+import org.jetbrains.kotlin.resolve.DataClassDescriptorResolver
 import org.jetbrains.kotlin.types.expressions.OperatorConventions
 
 class KtSimpleNameReference(expression: KtSimpleNameExpression) : KtSimpleReference<KtSimpleNameExpression>(expression) {
@@ -106,7 +105,7 @@ class KtSimpleNameReference(expression: KtSimpleNameExpression) : KtSimpleRefere
         // Do not rename if the reference corresponds to synthesized component function
         val expressionText = expression.text
         if (expressionText != null && Name.isValidIdentifier(expressionText)) {
-            if (isComponentLike(Name.identifier(expressionText)) && resolve() is KtParameter) {
+            if (DataClassDescriptorResolver.isComponentLike(Name.identifier(expressionText)) && resolve() is KtParameter) {
                 return expression
             }
         }
@@ -205,4 +204,28 @@ class KtSimpleNameReference(expression: KtSimpleNameExpression) : KtSimpleRefere
     }
 
     override fun getCanonicalText(): String = expression.text
+
+    override val resolvesByNames: Collection<Name>
+        get() {
+            val element = element
+
+            if (element is KtOperationReferenceExpression) {
+                val tokenType = element.operationSignTokenType
+                if (tokenType != null) {
+                    val name = OperatorConventions.getNameForOperationSymbol(
+                            tokenType, element.parent is KtUnaryExpression, element.parent is KtBinaryExpression
+                    ) ?: return emptyList()
+                    val counterpart = OperatorConventions.ASSIGNMENT_OPERATION_COUNTERPARTS[tokenType]
+                    if (counterpart != null) {
+                        val counterpartName = OperatorConventions.getNameForOperationSymbol(counterpart, false, true)!!
+                        return listOf(name, counterpartName)
+                    }
+                    else {
+                        return listOf(name)
+                    }
+                }
+            }
+
+            return listOf(element.getReferencedNameAsName())
+        }
 }

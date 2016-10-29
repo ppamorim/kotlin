@@ -19,8 +19,7 @@ package org.jetbrains.kotlin.resolve
 import com.google.common.collect.HashMultimap
 import com.google.common.collect.Multimap
 import com.intellij.psi.PsiElement
-import org.jetbrains.kotlin.config.LanguageFeature
-import org.jetbrains.kotlin.config.LanguageFeatureSettings
+import org.jetbrains.kotlin.config.LanguageVersionSettings
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.diagnostics.Errors.*
 import org.jetbrains.kotlin.incremental.KotlinLookupLocation
@@ -28,6 +27,7 @@ import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.resolve.calls.smartcasts.DataFlowInfo
+import org.jetbrains.kotlin.resolve.checkers.ClassifierUsageChecker
 import org.jetbrains.kotlin.resolve.lazy.*
 import org.jetbrains.kotlin.resolve.lazy.descriptors.LazyClassDescriptor
 import org.jetbrains.kotlin.resolve.lazy.descriptors.LazyScriptDescriptor
@@ -47,10 +47,14 @@ class LazyTopDownAnalyzer(
         private val declarationScopeProvider: DeclarationScopeProvider,
         private val qualifiedExpressionResolver: QualifiedExpressionResolver,
         private val identifierChecker: IdentifierChecker,
-        private val languageFeatureSettings: LanguageFeatureSettings
+        private val languageVersionSettings: LanguageVersionSettings,
+        private val classifierUsageCheckers: Iterable<ClassifierUsageChecker>
 ) {
-    fun analyzeDeclarations(topDownAnalysisMode: TopDownAnalysisMode, declarations: Collection<PsiElement>, outerDataFlowInfo: DataFlowInfo): TopDownAnalysisContext {
-
+    fun analyzeDeclarations(
+            topDownAnalysisMode: TopDownAnalysisMode,
+            declarations: Collection<PsiElement>,
+            outerDataFlowInfo: DataFlowInfo = DataFlowInfo.EMPTY
+    ): TopDownAnalysisContext {
         val c = TopDownAnalysisContext(topDownAnalysisMode, outerDataFlowInfo, declarationScopeProvider)
 
         val topLevelFqNames = HashMultimap.create<FqName, KtElement>()
@@ -107,7 +111,7 @@ class LazyTopDownAnalyzer(
                     val descriptor = lazyDeclarationResolver.getClassDescriptor(classOrObject, location) as ClassDescriptorWithResolutionScopes
 
                     c.declaredClasses.put(classOrObject, descriptor)
-                    registerDeclarations(classOrObject.getDeclarations())
+                    registerDeclarations(classOrObject.declarations)
                     registerTopLevelFqName(topLevelFqNames, classOrObject, descriptor)
 
                     checkClassOrObjectDeclarations(classOrObject, descriptor)
@@ -115,7 +119,7 @@ class LazyTopDownAnalyzer(
 
                 private fun checkClassOrObjectDeclarations(classOrObject: KtClassOrObject, classDescriptor: ClassDescriptor) {
                     var companionObjectAlreadyFound = false
-                    for (jetDeclaration in classOrObject.getDeclarations()) {
+                    for (jetDeclaration in classOrObject.declarations) {
                         if (jetDeclaration is KtObjectDeclaration && jetDeclaration.isCompanion()) {
                             if (companionObjectAlreadyFound) {
                                 trace.report(MANY_COMPANION_OBJECTS.on(jetDeclaration))
@@ -147,7 +151,7 @@ class LazyTopDownAnalyzer(
                 }
 
                 override fun visitSecondaryConstructor(constructor: KtSecondaryConstructor) {
-                    c.secondaryConstructors.put(constructor, lazyDeclarationResolver.resolveToDescriptor(constructor) as ConstructorDescriptor)
+                    c.secondaryConstructors.put(constructor, lazyDeclarationResolver.resolveToDescriptor(constructor) as ClassConstructorDescriptor)
                 }
 
                 override fun visitEnumEntry(enumEntry: KtEnumEntry) {
@@ -204,6 +208,10 @@ class LazyTopDownAnalyzer(
 
         bodyResolver.resolveBodies(c)
 
+        resolveImportsInAllFiles(c)
+
+        ClassifierUsageChecker.check(declarations, trace, languageVersionSettings, classifierUsageCheckers)
+
         return c
     }
 
@@ -213,9 +221,13 @@ class LazyTopDownAnalyzer(
         }
     }
 
-    private fun createTypeAliasDescriptors(c: TopDownAnalysisContext, topLevelFqNames: Multimap<FqName, KtElement>, typeAliases: List<KtTypeAlias>) {
-        if (!languageFeatureSettings.supportsFeature(LanguageFeature.TypeAliases)) return
+    private fun resolveImportsInAllFiles(c: TopDownAnalysisContext) {
+        for (file in c.files + c.scripts.keys.map { it.getContainingKtFile() }) {
+            fileScopeProvider.getImportResolver(file).forceResolveAllImports()
+        }
+    }
 
+    private fun createTypeAliasDescriptors(c: TopDownAnalysisContext, topLevelFqNames: Multimap<FqName, KtElement>, typeAliases: List<KtTypeAlias>) {
         for (typeAlias in typeAliases) {
             val descriptor = lazyDeclarationResolver.resolveToDescriptor(typeAlias) as TypeAliasDescriptor
 
@@ -255,5 +267,3 @@ class LazyTopDownAnalyzer(
         }
     }
 }
-
-

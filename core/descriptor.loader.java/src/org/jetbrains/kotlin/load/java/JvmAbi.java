@@ -34,6 +34,7 @@ import static org.jetbrains.kotlin.resolve.DescriptorUtils.isCompanionObject;
 public final class JvmAbi {
     public static final String DEFAULT_IMPLS_CLASS_NAME = "DefaultImpls";
     public static final String DEFAULT_IMPLS_SUFFIX = "$" + DEFAULT_IMPLS_CLASS_NAME;
+    public static final String DEFAULT_IMPLS_DELEGATE_SUFFIX = "$defaultImpl";
 
     public static final String DEFAULT_PARAMS_IMPL_SUFFIX = "$default";
 
@@ -44,7 +45,9 @@ public final class JvmAbi {
     public static final String DELEGATED_PROPERTY_NAME_SUFFIX = "$delegate";
     public static final String DELEGATED_PROPERTIES_ARRAY_NAME = "$$delegatedProperties";
     public static final String DELEGATE_SUPER_FIELD_PREFIX = "$$delegate_";
-    public static final String ANNOTATED_PROPERTY_METHOD_NAME_SUFFIX = "$annotations";
+    private static final String ANNOTATIONS_SUFFIX = "$annotations";
+    public static final String ANNOTATED_PROPERTY_METHOD_NAME_SUFFIX = ANNOTATIONS_SUFFIX;
+    public static final String ANNOTATED_TYPEALIAS_METHOD_NAME_SUFFIX = ANNOTATIONS_SUFFIX;
 
     public static final String INSTANCE_FIELD = "INSTANCE";
 
@@ -59,6 +62,11 @@ public final class JvmAbi {
     @NotNull
     public static String getSyntheticMethodNameForAnnotatedProperty(@NotNull Name propertyName) {
         return propertyName.asString() + ANNOTATED_PROPERTY_METHOD_NAME_SUFFIX;
+    }
+
+    @NotNull
+    public static String getSyntheticMethodNameForAnnotatedTypeAlias(@NotNull Name typeAliasName) {
+        return typeAliasName.asString() + ANNOTATED_TYPEALIAS_METHOD_NAME_SUFFIX;
     }
 
     public static boolean isGetterName(@NotNull String name) {

@@ -41,7 +41,7 @@ class PrimitiveMapJsTest : MapJsTest() {
     }
 
     override fun <T : kotlin.Comparable<T>> Collection<T>.toNormalizedList(): List<T> = this.sorted()
-    override fun emptyMutableMap(): MutableMap<String, Int> = HashMap()
+    override fun emptyMutableMap(): MutableMap<String, Int> = stringMapOf()
     override fun emptyMutableMapWithNullableKeyValue(): MutableMap<String?, Int?> = HashMap()
 
     @test fun compareBehavior() {
@@ -55,7 +55,7 @@ class PrimitiveMapJsTest : MapJsTest() {
     }
 }
 
-class LinkedHashMapTest : MapJsTest() {
+class LinkedHashMapJsTest : MapJsTest() {
     @test override fun constructors() {
         LinkedHashMap<String, Int>()
         LinkedHashMap<String, Int>(3)
@@ -69,6 +69,19 @@ class LinkedHashMapTest : MapJsTest() {
 
     override fun <T : kotlin.Comparable<T>> Collection<T>.toNormalizedList(): List<T> = this.toList()
     override fun emptyMutableMap(): MutableMap<String, Int> = LinkedHashMap()
+    override fun emptyMutableMapWithNullableKeyValue(): MutableMap<String?, Int?> = LinkedHashMap()
+}
+
+class LinkedPrimitiveMapJsTest : MapJsTest() {
+    @test override fun constructors() {
+        val map = createTestMap()
+
+        assertEquals(KEYS.toNormalizedList(), map.keys.toNormalizedList())
+        assertEquals(VALUES.toNormalizedList(), map.values.toNormalizedList())
+    }
+
+    override fun <T : kotlin.Comparable<T>> Collection<T>.toNormalizedList(): List<T> = this.toList()
+    override fun emptyMutableMap(): MutableMap<String, Int> = linkedStringMapOf()
     override fun emptyMutableMapWithNullableKeyValue(): MutableMap<String?, Int?> = LinkedHashMap()
 }
 
@@ -211,6 +224,12 @@ abstract class MapJsTest {
         assertEquals(KEYS.size, newMap.size)
     }
 
+    @test fun mapPutAllFromCustomMap() {
+        val newMap = emptyMutableMap()
+        newMap.putAll(ConstMap)
+        assertEquals(ConstMap.entries.single().toPair(), newMap.entries.single().toPair())
+    }
+
     @test fun mapRemove() {
         val map = createTestMutableMap()
         val last = KEYS.size - 1
@@ -314,6 +333,66 @@ abstract class MapJsTest {
 
         assertEquals(KEYS.toNormalizedList(), actualKeys.toNormalizedList())
         assertEquals(VALUES.toNormalizedList(), actualValues.toNormalizedList())
+    }
+
+    @test fun mapMutableIterator() {
+        val map = createTestMutableMap()
+        map.keys.removeAll { it == KEYS[0] }
+        map.entries.removeAll { it.key == KEYS[1] }
+        map.values.removeAll { it == VALUES[3] }
+
+        assertEquals(1, map.size, "Expected 1 entry to remain in map, but got: $map")
+    }
+
+    @test fun mapCollectionPropertiesAreViews() {
+        val map = createTestMutableMap()
+        assertTrue(map.size >= 3)
+        val keys = map.keys
+        val values = map.values
+        val entries = map.entries
+
+        val (key, value) = map.entries.first()
+
+        map.remove(key)
+        assertFalse(key in keys, "remove from map")
+        assertFalse(value in values)
+        assertFalse(entries.any { it.key == key })
+
+        map.put(key, value)
+        assertTrue(key in keys, "put to map")
+        assertTrue(value in values)
+        assertTrue(entries.any { it.key == key })
+
+        keys -= key
+        assertFalse(key in map, "remove from keys")
+        assertFalse(value in values)
+        assertFalse(entries.any { it.key == key })
+
+        val (key2, value2) = map.entries.first()
+        values -= value2
+        assertFalse(key2 in map, "remove from values")
+        assertFalse(map.containsValue(value2))
+        assertFalse(entries.any { it.value == value2 })
+
+        val entry = map.entries.first()
+        entries -= entry
+        assertFalse(entry.key in map, "remove from entries")
+        assertFalse(entry.key in keys)
+        assertFalse(entry.value in values)
+
+        val entry2 = map.entries.first()
+        entry2.setValue(100)
+        assertEquals(100, map[entry2.key], "set value via entry")
+    }
+
+    @test fun mapCollectionPropertiesDoNotSupportAdd() {
+        val map = createTestMutableMap()
+        val entry = map.entries.first()
+        val (key, value) = entry
+
+        assertFailsWith<UnsupportedOperationException> { map.entries += entry }
+        assertFailsWith<UnsupportedOperationException> { map.keys += key }
+        assertFailsWith<UnsupportedOperationException> { map.values += value }
     }
 
     @test fun specialNamesNotContainsInEmptyMap() {
@@ -467,6 +546,21 @@ abstract class MapJsTest {
         println("==== worked! $list")
     }
     */
+
+    private object ConstMap : Map<String, Int> {
+        override val entries: Set<Map.Entry<String, Int>>
+            get() = setOf(object : Map.Entry<String, Int> {
+                override val key: String get() = "key"
+                override val value: Int get() = 42
+            })
+        override val keys: Set<String> get() = setOf("key")
+        override val size: Int get() = 1
+        override val values = listOf(42)
+        override fun containsKey(key: String) = key == "key"
+        override fun containsValue(value: Int) = value == 42
+        override fun get(key: String) = if (key == "key") 42 else null
+        override fun isEmpty() = false
+    }
 
     // Helpers
 

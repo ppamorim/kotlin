@@ -16,7 +16,6 @@
 
 package kotlin.reflect.jvm.internal
 
-import org.jetbrains.kotlin.builtins.DefaultBuiltIns
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.builtins.PrimitiveType
 import org.jetbrains.kotlin.descriptors.FunctionDescriptor
@@ -24,7 +23,7 @@ import org.jetbrains.kotlin.descriptors.PackageFragmentDescriptor
 import org.jetbrains.kotlin.descriptors.PropertyDescriptor
 import org.jetbrains.kotlin.descriptors.Visibilities
 import org.jetbrains.kotlin.load.java.JvmAbi
-import org.jetbrains.kotlin.load.java.descriptors.JavaConstructorDescriptor
+import org.jetbrains.kotlin.load.java.descriptors.JavaClassConstructorDescriptor
 import org.jetbrains.kotlin.load.java.descriptors.JavaMethodDescriptor
 import org.jetbrains.kotlin.load.java.descriptors.JavaPropertyDescriptor
 import org.jetbrains.kotlin.load.java.sources.JavaSourceElement
@@ -33,7 +32,6 @@ import org.jetbrains.kotlin.load.kotlin.JvmPackagePartSource
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.platform.JavaToKotlinClassMap
 import org.jetbrains.kotlin.resolve.DescriptorUtils
-import org.jetbrains.kotlin.resolve.descriptorUtil.classId
 import org.jetbrains.kotlin.resolve.jvm.JvmPrimitiveType
 import org.jetbrains.kotlin.serialization.ProtoBuf
 import org.jetbrains.kotlin.serialization.deserialization.NameResolver
@@ -71,9 +69,15 @@ internal sealed class JvmFunctionSignature {
 
     class JavaConstructor(val constructor: Constructor<*>) : JvmFunctionSignature() {
         override fun asString(): String =
-                "<init>" +
-                constructor.parameterTypes.joinToString(separator = "", prefix = "(", postfix = ")") { it.desc } +
-                "V"
+                constructor.parameterTypes.joinToString(separator = "", prefix = "<init>(", postfix = ")V") { it.desc }
+    }
+
+    class FakeJavaAnnotationConstructor(val jClass: Class<*>) : JvmFunctionSignature() {
+        // Java annotations do not impose any order of methods inside them, so we consider them lexicographic here for stability
+        val methods = jClass.declaredMethods.sortedBy { it.name }
+
+        override fun asString(): String =
+                methods.joinToString(separator = "", prefix = "<init>(", postfix = ")V") { it.returnType.desc }
     }
 
     open class BuiltInFunction(private val signature: String) : JvmFunctionSignature() {
@@ -188,11 +192,15 @@ internal object RuntimeTypeMapper {
 
                 return JvmFunctionSignature.JavaMethod(method)
             }
-            is JavaConstructorDescriptor -> {
-                val constructor = ((function.source as? JavaSourceElement)?.javaElement as? ReflectJavaConstructor)?.member ?:
-                                  throw KotlinReflectionInternalError("Incorrect resolution sequence for Java constructor $function")
-
-                return JvmFunctionSignature.JavaConstructor(constructor)
+            is JavaClassConstructorDescriptor -> {
+                val element = (function.source as? JavaSourceElement)?.javaElement
+                when {
+                    element is ReflectJavaConstructor ->
+                        return JvmFunctionSignature.JavaConstructor(element.member)
+                    element is ReflectJavaClass && element.isAnnotationType ->
+                        return JvmFunctionSignature.FakeJavaAnnotationConstructor(element.element)
+                    else -> throw KotlinReflectionInternalError("Incorrect resolution sequence for Java constructor $function ($element)")
+                }
             }
             else -> throw KotlinReflectionInternalError("Unknown origin of $function (${function.javaClass})")
         }
@@ -261,7 +269,7 @@ internal object RuntimeTypeMapper {
 
         val classId = klass.classId
         if (!classId.isLocal) {
-            JavaToKotlinClassMap.INSTANCE.mapJavaToKotlin(classId.asSingleFqName(), DefaultBuiltIns.Instance)?.let { return it.classId }
+            JavaToKotlinClassMap.INSTANCE.mapJavaToKotlin(classId.asSingleFqName())?.let { return it }
         }
 
         return classId

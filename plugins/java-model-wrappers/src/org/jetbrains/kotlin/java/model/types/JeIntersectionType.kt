@@ -23,19 +23,29 @@ import javax.lang.model.type.TypeKind
 import javax.lang.model.type.TypeVisitor
 
 class JeIntersectionType(
-        override val psiType: PsiIntersectionType, 
-        override val psiManager: PsiManager
-) : JePsiType(), JeTypeWithManager, IntersectionType {
+        psiType: PsiIntersectionType,
+        psiManager: PsiManager,
+        private val isRaw: Boolean
+) : JePsiTypeBase<PsiIntersectionType>(psiType, psiManager), IntersectionType {
     override fun getKind() = TypeKind.INTERSECTION
     override fun <R : Any?, P : Any?> accept(v: TypeVisitor<R, P>, p: P) = v.visitIntersection(this, p)
 
-    override fun getBounds() = psiType.superTypes.map { it.toJeType(psiManager) }
+    override fun getBounds() = psiType.superTypes.map { it.toJeType(psiManager, isRaw = isRaw) }
 
-    override fun equals(other: Any?): Boolean{
+    override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other?.javaClass != javaClass) return false
-        return psiType == (other as? JeIntersectionType)?.psiType
+        other as? JeIntersectionType ?: return false
+
+        return bounds == other.bounds
+               && isRaw == other.isRaw
     }
 
-    override fun hashCode() = psiType.hashCode()
+    override fun hashCode(): Int {
+        var result = bounds.hashCode()
+        result = 31 * result + isRaw.hashCode()
+        return result
+    }
+
+    override fun toString() = bounds.joinToString("&")
 }

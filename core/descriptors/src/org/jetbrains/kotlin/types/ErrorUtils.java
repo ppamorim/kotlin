@@ -23,15 +23,13 @@ import org.jetbrains.kotlin.builtins.DefaultBuiltIns;
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns;
 import org.jetbrains.kotlin.descriptors.*;
 import org.jetbrains.kotlin.descriptors.annotations.Annotations;
+import org.jetbrains.kotlin.descriptors.impl.ClassConstructorDescriptorImpl;
 import org.jetbrains.kotlin.descriptors.impl.ClassDescriptorImpl;
-import org.jetbrains.kotlin.descriptors.impl.ConstructorDescriptorImpl;
 import org.jetbrains.kotlin.descriptors.impl.PropertyDescriptorImpl;
 import org.jetbrains.kotlin.descriptors.impl.TypeParameterDescriptorImpl;
 import org.jetbrains.kotlin.incremental.components.LookupLocation;
 import org.jetbrains.kotlin.name.FqName;
 import org.jetbrains.kotlin.name.Name;
-import org.jetbrains.kotlin.platform.PlatformToKotlinClassMap;
-import org.jetbrains.kotlin.resolve.ImportPath;
 import org.jetbrains.kotlin.resolve.descriptorUtil.DescriptorUtilsKt;
 import org.jetbrains.kotlin.resolve.scopes.DescriptorKindFilter;
 import org.jetbrains.kotlin.resolve.scopes.MemberScope;
@@ -59,33 +57,13 @@ public class ErrorUtils {
 
             @NotNull
             @Override
-            public PlatformToKotlinClassMap getPlatformToKotlinClassMap() {
-                throw new IllegalStateException("Should not be called!");
-            }
-
-            @NotNull
-            @Override
-            public List<ImportPath> getDefaultImports() {
-                return emptyList();
-            }
-
-            @NotNull
-            @Override
-            public List<FqName> getExcludedImports() {
-                return emptyList();
-            }
-
-            @NotNull
-            @Override
             public Annotations getAnnotations() {
                 return Annotations.Companion.getEMPTY();
             }
 
             @NotNull
             @Override
-            public Collection<FqName> getSubPackagesOf(
-                    @NotNull FqName fqName, @NotNull Function1<? super Name, Boolean> nameFilter
-            ) {
+            public Collection<FqName> getSubPackagesOf(@NotNull FqName fqName, @NotNull Function1<? super Name, Boolean> nameFilter) {
                 return emptyList();
             }
 
@@ -99,6 +77,12 @@ public class ErrorUtils {
             @Override
             public PackageViewDescriptor getPackage(@NotNull FqName fqName) {
                 throw new IllegalStateException("Should not be called!");
+            }
+
+            @NotNull
+            @Override
+            public List<ModuleDescriptor> getAllDependentModules() {
+                return emptyList();
             }
 
             @Override
@@ -118,7 +102,7 @@ public class ErrorUtils {
             }
 
             @Override
-            public boolean isFriend(@NotNull ModuleDescriptor other) {
+            public boolean shouldSeeInternalsOf(@NotNull ModuleDescriptor targetModule) {
                 return false;
             }
 
@@ -304,7 +288,8 @@ public class ErrorUtils {
             super(getErrorModule(), Name.special(name == null ? "<ERROR CLASS>" : "<ERROR CLASS: " + name + ">"),
                   Modality.OPEN, ClassKind.CLASS, Collections.<KotlinType>emptyList(), SourceElement.NO_SOURCE);
 
-            ConstructorDescriptorImpl errorConstructor = ConstructorDescriptorImpl.create(this, Annotations.Companion.getEMPTY(), true, SourceElement.NO_SOURCE);
+            ClassConstructorDescriptorImpl
+                    errorConstructor = ClassConstructorDescriptorImpl.create(this, Annotations.Companion.getEMPTY(), true, SourceElement.NO_SOURCE);
             errorConstructor.initialize(Collections.<ValueParameterDescriptor>emptyList(),
                                         Visibilities.INTERNAL);
             MemberScope memberScope = createErrorScope(getName().asString());
@@ -315,7 +300,7 @@ public class ErrorUtils {
                     )
             );
 
-            initialize(memberScope, Collections.<ConstructorDescriptor>singleton(errorConstructor), errorConstructor);
+            initialize(memberScope, Collections.<ClassConstructorDescriptor>singleton(errorConstructor), errorConstructor);
         }
 
         @NotNull
@@ -473,12 +458,6 @@ public class ErrorUtils {
             @Override
             public KotlinBuiltIns getBuiltIns() {
                 return DefaultBuiltIns.getInstance();
-            }
-
-            @NotNull
-            @Override
-            public Annotations getAnnotations() {
-                return Annotations.Companion.getEMPTY();
             }
 
             @Override
@@ -644,12 +623,6 @@ public class ErrorUtils {
         @Override
         public ClassifierDescriptor getDeclarationDescriptor() {
             return errorTypeConstructor.getDeclarationDescriptor();
-        }
-
-        @NotNull
-        @Override
-        public Annotations getAnnotations() {
-            return errorTypeConstructor.getAnnotations();
         }
 
         @NotNull

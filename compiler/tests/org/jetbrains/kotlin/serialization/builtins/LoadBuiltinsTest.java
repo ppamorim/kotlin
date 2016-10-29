@@ -23,16 +23,15 @@ import kotlin.collections.CollectionsKt;
 import kotlin.jvm.functions.Function1;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.kotlin.builtins.DefaultBuiltIns;
+import org.jetbrains.kotlin.builtins.KotlinBuiltIns;
 import org.jetbrains.kotlin.builtins.functions.BuiltInFictitiousFunctionClassFactory;
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment;
 import org.jetbrains.kotlin.codegen.forTestCompile.ForTestCompileRuntime;
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor;
-import org.jetbrains.kotlin.descriptors.ModuleParameters;
 import org.jetbrains.kotlin.descriptors.PackageFragmentDescriptor;
 import org.jetbrains.kotlin.descriptors.PackageFragmentProvider;
 import org.jetbrains.kotlin.descriptors.impl.ModuleDescriptorImpl;
 import org.jetbrains.kotlin.name.FqName;
-import org.jetbrains.kotlin.name.Name;
 import org.jetbrains.kotlin.psi.KtFile;
 import org.jetbrains.kotlin.renderer.DescriptorRenderer;
 import org.jetbrains.kotlin.renderer.DescriptorRendererModifier;
@@ -51,6 +50,7 @@ import org.jetbrains.kotlin.test.util.RecursiveDescriptorComparator;
 
 import java.io.File;
 import java.io.InputStream;
+import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -73,6 +73,7 @@ public class LoadBuiltinsTest extends KotlinTestWithEnvironment {
                                         options.setWithDefinedIn(false);
                                         options.setOverrideRenderingPolicy(OverrideRenderingPolicy.RENDER_OPEN_OVERRIDE);
                                         options.setVerbose(true);
+                                        options.setIncludeAnnotationArguments(true);
                                         options.setModifiers(DescriptorRendererModifier.ALL);
                                         return Unit.INSTANCE;
                                     }
@@ -107,13 +108,12 @@ public class LoadBuiltinsTest extends KotlinTestWithEnvironment {
     @NotNull
     private static PackageFragmentProvider createBuiltInsPackageFragmentProvider() {
         LockBasedStorageManager storageManager = new LockBasedStorageManager();
-        ModuleDescriptorImpl builtInsModule = new ModuleDescriptorImpl(
-                Name.special("<built-ins module>"), storageManager, ModuleParameters.Empty.INSTANCE, DefaultBuiltIns.getInstance()
-        );
+        ModuleDescriptorImpl builtInsModule =
+                new ModuleDescriptorImpl(KotlinBuiltIns.BUILTINS_MODULE_NAME, storageManager, DefaultBuiltIns.getInstance());
 
         PackageFragmentProvider packageFragmentProvider = createBuiltInPackageFragmentProvider(
                 storageManager, builtInsModule, BUILT_INS_PACKAGE_FQ_NAMES,
-                new BuiltInFictitiousFunctionClassFactory(storageManager, builtInsModule),
+                Collections.singletonList(new BuiltInFictitiousFunctionClassFactory(storageManager, builtInsModule)),
                 PlatformDependentDeclarationFilter.All.INSTANCE,
                 AdditionalClassPartsProvider.None.INSTANCE,
                 new Function1<String, InputStream>() {

@@ -16,6 +16,7 @@
 
 package org.jetbrains.kotlin.idea.inspections
 
+import com.intellij.codeInsight.FileModificationService
 import com.intellij.codeInsight.intention.HighPriorityAction
 import com.intellij.codeInsight.intention.IntentionAction
 import com.intellij.codeInsight.intention.LowPriorityAction
@@ -31,6 +32,9 @@ import com.intellij.psi.PsiElementVisitor
 import com.intellij.psi.PsiFile
 import com.intellij.util.SmartList
 import org.jetbrains.kotlin.idea.intentions.SelfTargetingRangeIntention
+import org.jetbrains.kotlin.psi.psiUtil.endOffset
+import org.jetbrains.kotlin.psi.psiUtil.getStartOffsetIn
+import org.jetbrains.kotlin.psi.psiUtil.startOffset
 import kotlin.reflect.KClass
 
 abstract class IntentionBasedInspection<TElement : PsiElement>(
@@ -64,7 +68,12 @@ abstract class IntentionBasedInspection<TElement : PsiElement>(
 
     open fun additionalFixes(element: TElement): List<LocalQuickFix>? = null
 
-    open fun inspectionRange(element: TElement): TextRange? = null
+    open fun inspectionTarget(element: TElement): PsiElement? = null
+
+    private fun PsiElement.toRange(baseElement: PsiElement): TextRange {
+        val start = getStartOffsetIn(baseElement)
+        return TextRange(start, start + endOffset - startOffset)
+    }
 
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean, session: LocalInspectionToolSession): PsiElementVisitor {
 
@@ -100,7 +109,7 @@ abstract class IntentionBasedInspection<TElement : PsiElement>(
                     }
                 }
 
-                val range = inspectionRange(targetElement) ?: problemRange
+                val range = inspectionTarget(targetElement)?.toRange(element) ?: problemRange
                 if (range != null) {
                     val allFixes = fixes ?: SmartList<LocalQuickFix>()
                     additionalFixes(targetElement)?.let { allFixes.addAll(it) }
@@ -159,6 +168,7 @@ abstract class IntentionBasedInspection<TElement : PsiElement>(
         override fun invoke(project: Project, file: PsiFile, startElement: PsiElement, endElement: PsiElement) {
             assert(startElement == endElement)
             if (!isAvailable(project, file, startElement, endElement)) return
+            if (!FileModificationService.getInstance().prepareFileForWrite(file)) return
 
             val editor = startElement.findExistingEditor()
             editor?.caretModel?.moveToOffset(startElement.textOffset)

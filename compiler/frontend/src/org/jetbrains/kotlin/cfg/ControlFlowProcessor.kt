@@ -40,7 +40,10 @@ import org.jetbrains.kotlin.lexer.KtTokens.*
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.getQualifiedElementSelector
 import org.jetbrains.kotlin.psi.psiUtil.getStrictParentOfType
-import org.jetbrains.kotlin.resolve.*
+import org.jetbrains.kotlin.resolve.BindingContext
+import org.jetbrains.kotlin.resolve.BindingContextUtils
+import org.jetbrains.kotlin.resolve.BindingTrace
+import org.jetbrains.kotlin.resolve.CompileTimeConstantUtils
 import org.jetbrains.kotlin.resolve.calls.callUtil.getResolvedCall
 import org.jetbrains.kotlin.resolve.calls.model.ArgumentMatch
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall
@@ -49,8 +52,8 @@ import org.jetbrains.kotlin.resolve.calls.tasks.ExplicitReceiverKind
 import org.jetbrains.kotlin.resolve.calls.tower.getFakeDescriptorForObject
 import org.jetbrains.kotlin.resolve.calls.util.FakeCallableDescriptorForObject
 import org.jetbrains.kotlin.resolve.constants.evaluate.ConstantExpressionEvaluator
-import org.jetbrains.kotlin.types.expressions.DoubleColonLHS
 import org.jetbrains.kotlin.resolve.scopes.receivers.*
+import org.jetbrains.kotlin.types.expressions.DoubleColonLHS
 import org.jetbrains.kotlin.types.expressions.OperatorConventions
 import java.util.*
 
@@ -773,18 +776,19 @@ class ControlFlowProcessor(private val trace: BindingTrace) {
 
         private fun declareLoopParameter(expression: KtForExpression) {
             val loopParameter = expression.loopParameter
-            val multiDeclaration = expression.destructuringParameter
             if (loopParameter != null) {
-                builder.declareParameter(loopParameter)
-            }
-            else if (multiDeclaration != null) {
-                visitDestructuringDeclaration(multiDeclaration, false)
+                val destructuringDeclaration = loopParameter.destructuringDeclaration
+                if (destructuringDeclaration != null) {
+                    visitDestructuringDeclaration(destructuringDeclaration, false)
+                }
+                else {
+                    builder.declareParameter(loopParameter)
+                }
             }
         }
 
         private fun writeLoopParameterAssignment(expression: KtForExpression) {
             val loopParameter = expression.loopParameter
-            val multiDeclaration = expression.destructuringParameter
             val loopRange = expression.loopRange
 
             val value = builder.magic(
@@ -795,11 +799,14 @@ class ControlFlowProcessor(private val trace: BindingTrace) {
             ).outputValue
 
             if (loopParameter != null) {
-                generateInitializer(loopParameter, value)
-            }
-            else if (multiDeclaration != null) {
-                for (entry in multiDeclaration.entries) {
-                    generateInitializer(entry, value)
+                val destructuringDeclaration = loopParameter.destructuringDeclaration
+                if (destructuringDeclaration != null) {
+                    for (entry in destructuringDeclaration.entries) {
+                        generateInitializer(entry, value)
+                    }
+                }
+                else {
+                    generateInitializer(loopParameter, value)
                 }
             }
         }
@@ -966,6 +973,10 @@ class ControlFlowProcessor(private val trace: BindingTrace) {
                 builder.bindLabel(skipDefaultValue)
             }
             generateInitializer(parameter, computePseudoValueForParameter(parameter))
+
+            parameter.destructuringDeclaration?.let {
+                visitDestructuringDeclaration(it, generateWriteForEntries = true)
+            }
         }
 
         private fun computePseudoValueForParameter(parameter: KtParameter): PseudoValue {

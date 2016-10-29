@@ -45,6 +45,7 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
 
     private static final IElementType[] LOCAL_DECLARATION_FIRST =
             new IElementType[] {CLASS_KEYWORD, INTERFACE_KEYWORD, FUN_KEYWORD, VAL_KEYWORD, VAR_KEYWORD, TYPE_ALIAS_KEYWORD};
+    private static final TokenSet TOKEN_SET_TO_FOLLOW_AFTER_DESTRUCTURING_DECLARATION_IN_LAMBDA = TokenSet.create(ARROW, COMMA, COLON);
 
     private static ImmutableMap<String, KtToken> tokenSetToMap(TokenSet tokens) {
         ImmutableMap.Builder<String, KtToken> builder = ImmutableMap.builder();
@@ -879,11 +880,11 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
                     error("Expecting an element");
                 }
                 else {
-                    parseExpressionPreferringBlocks();
+                    parseControlStructureBody();
                 }
             }
             else if (at(LBRACE)) { // no arrow, probably it's simply missing
-                parseExpressionPreferringBlocks();
+                parseControlStructureBody();
             }
             else if (!atSet(WHEN_CONDITION_RECOVERY_SET)) {
                 errorAndAdvance("Expecting '->'");
@@ -913,7 +914,7 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
             error("Expecting an element");
         }
         else {
-            parseExpressionPreferringBlocks();
+            parseControlStructureBody();
         }
         // SEMI is consumed in parseWhenEntry
     }
@@ -1036,6 +1037,9 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
         parseFunctionLiteral(/* preferBlock = */false, /* collapse = */true);
     }
 
+    /**
+     * If it has no ->, it's a block, otherwise a function literal
+     */
     public void parseFunctionLiteral(boolean preferBlock, boolean collapse) {
         assert _at(LBRACE);
 
@@ -1054,20 +1058,19 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
             advance(); // ARROW
             paramsFound = true;
         }
-        else {
-            if (at(IDENTIFIER) || at(COLON)) {
-                // Try to parse a simple name list followed by an ARROW
-                //   {a -> ...}
-                //   {a, b -> ...}
-                PsiBuilder.Marker rollbackMarker = mark();
-                IElementType nextToken = lookahead(1);
-                boolean preferParamsToExpressions = (nextToken == COMMA || nextToken == COLON);
-                parseFunctionLiteralShorthandParameterList();
+        else if (at(IDENTIFIER) || at(COLON) || at(LPAR)) {
+            // Try to parse a simple name list followed by an ARROW
+            //   {a -> ...}
+            //   {a, b -> ...}
+            //   {(a, b) -> ... }
+            PsiBuilder.Marker rollbackMarker = mark();
+            IElementType nextToken = lookahead(1);
+            boolean preferParamsToExpressions = (nextToken == COMMA || nextToken == COLON);
+            parseFunctionLiteralParameterList();
 
-                paramsFound = preferParamsToExpressions ?
-                              rollbackOrDrop(rollbackMarker, ARROW, "An -> is expected", RBRACE) :
-                              rollbackOrDropAt(rollbackMarker, ARROW);
-            }
+            paramsFound = preferParamsToExpressions ?
+                          rollbackOrDrop(rollbackMarker, ARROW, "An -> is expected", RBRACE) :
+                          rollbackOrDropAt(rollbackMarker, ARROW);
         }
 
         if (!paramsFound && preferBlock) {
@@ -1080,19 +1083,41 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
             return;
         }
 
-        PsiBuilder.Marker body = mark();
-        parseStatements();
-        body.done(BLOCK);
-
-        expect(RBRACE, "Expecting '}'");
-        myBuilder.restoreNewlinesState();
-
-        literal.done(FUNCTION_LITERAL);
         if (collapse) {
+            advanceLambdaBlock();
+            literal.done(FUNCTION_LITERAL);
             literalExpression.collapse(LAMBDA_EXPRESSION);
         }
         else {
+            PsiBuilder.Marker body = mark();
+            parseStatements();
+
+            body.done(BLOCK);
+            body.setCustomEdgeTokenBinders(CommentBindersKt.PRECEDING_ALL_COMMENTS_BINDER, CommentBindersKt.TRAILING_ALL_COMMENTS_BINDER);
+
+            expect(RBRACE, "Expecting '}'");
+            literal.done(FUNCTION_LITERAL);
             literalExpression.done(LAMBDA_EXPRESSION);
+        }
+
+        myBuilder.restoreNewlinesState();
+    }
+
+    private void advanceLambdaBlock() {
+        int braceCount = 1;
+        while (!eof()) {
+            if (_at(LBRACE)) {
+                braceCount++;
+            }
+            else if (_at(RBRACE)) {
+                braceCount--;
+            }
+
+            advance();
+
+            if (braceCount == 0) {
+                break;
+            }
         }
     }
 
@@ -1126,19 +1151,25 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
 
 
     /*
-     * (SimpleName (":" type)?){","}
+     * lambdaParameter{","}
+     *
+     * lambdaParameter
+     *   : variableDeclarationEntry
+     *   : multipleVariableDeclarations (":" type)?
      */
-    private void parseFunctionLiteralShorthandParameterList() {
+    private void parseFunctionLiteralParameterList() {
         PsiBuilder.Marker parameterList = mark();
 
         while (!eof()) {
             PsiBuilder.Marker parameter = mark();
 
-            //            int parameterNamePos = matchTokenStreamPredicate(new LastBefore(new At(IDENTIFIER), new AtOffset(doubleArrowPos)));
-            //            createTruncatedBuilder(parameterNamePos).parseModifierList(MODIFIER_LIST, false);
-
             if (at(COLON)) {
                 error("Expecting parameter name");
+            }
+            else if (at(LPAR)) {
+                PsiBuilder.Marker destructuringDeclaration = mark();
+                myKotlinParsing.parseMultiDeclarationName(TOKEN_SET_TO_FOLLOW_AFTER_DESTRUCTURING_DECLARATION_IN_LAMBDA);
+                destructuringDeclaration.done(DESTRUCTURING_DECLARATION);
             }
             else {
                 expect(IDENTIFIER, "Expecting parameter name", TokenSet.create(ARROW));
@@ -1207,8 +1238,8 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
 
     /*
      * statement
-     *  : expression
      *  : declaration
+     *  : blockLevelExpression
      *  ;
      */
     private void parseStatement(boolean isScriptTopLevel) {
@@ -1218,13 +1249,37 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
             }
             else if (isScriptTopLevel){
                 PsiBuilder.Marker scriptInitializer = mark();
-                parseExpression();
+                parseBlockLevelExpression();
                 scriptInitializer.done(SCRIPT_INITIALIZER);
             }
             else {
-                parseExpression();
+                parseBlockLevelExpression();
             }
         }
+    }
+
+    /*
+     * blockLevelExpression
+     *  : annotations + ("\n")+ expression
+     *  ;
+     */
+    private void parseBlockLevelExpression() {
+        if (at(AT)) {
+            PsiBuilder.Marker expression = mark();
+            myKotlinParsing.parseAnnotations(DEFAULT);
+
+            if (!myBuilder.newlineBeforeCurrentToken()) {
+                expression.rollbackTo();
+                parseExpression();
+                return;
+            }
+
+            parseBlockLevelExpression();
+            expression.done(ANNOTATED_EXPRESSION);
+            return;
+        }
+
+        parseExpression();
     }
 
     /*
@@ -1292,7 +1347,7 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
         advance(); // DO_KEYWORD
 
         if (!at(WHILE_KEYWORD)) {
-            parseControlStructureBody();
+            parseLoopBody();
         }
 
         if (expect(WHILE_KEYWORD, "Expecting 'while' followed by a post-condition")) {
@@ -1316,7 +1371,7 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
 
         parseCondition();
 
-        parseControlStructureBody();
+        parseLoopBody();
 
         loop.done(WHILE);
     }
@@ -1348,8 +1403,9 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
                 if (at(VAL_KEYWORD) || at(VAR_KEYWORD)) advance(); // VAL_KEYWORD or VAR_KEYWORD
 
                 if (at(LPAR)) {
+                    PsiBuilder.Marker destructuringDeclaration = mark();
                     myKotlinParsing.parseMultiDeclarationName(TokenSet.create(IN_KEYWORD, LBRACE));
-                    parameter.done(DESTRUCTURING_DECLARATION);
+                    destructuringDeclaration.done(DESTRUCTURING_DECLARATION);
                 }
                 else {
                     expect(IDENTIFIER, "Expecting a variable name", TokenSet.create(COLON, IN_KEYWORD));
@@ -1358,8 +1414,8 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
                         advance(); // COLON
                         myKotlinParsing.parseTypeRef(TokenSet.create(IN_KEYWORD));
                     }
-                    parameter.done(VALUE_PARAMETER);
                 }
+                parameter.done(VALUE_PARAMETER);
 
                 if (expect(IN_KEYWORD, "Expecting 'in'", TokenSet.create(LPAR, LBRACE, RPAR))) {
                     PsiBuilder.Marker range = mark();
@@ -1375,27 +1431,24 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
             myBuilder.restoreNewlinesState();
         }
 
-        parseControlStructureBody();
+        parseLoopBody();
 
         loop.done(FOR);
     }
 
-    /**
-     * If it has no ->, it's a block, otherwise a function literal
-     */
-    private void parseExpressionPreferringBlocks() {
+    private void parseControlStructureBody() {
         if (!parseAnnotatedLambda(/* preferBlock = */true)) {
-            parseExpression();
+            parseBlockLevelExpression();
         }
     }
 
     /*
      * element
      */
-    private void parseControlStructureBody() {
+    private void parseLoopBody() {
         PsiBuilder.Marker body = mark();
         if (!at(SEMICOLON)) {
-            parseExpressionPreferringBlocks();
+            parseControlStructureBody();
         }
         body.done(BODY);
     }
@@ -1487,7 +1540,7 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
 
         PsiBuilder.Marker thenBranch = mark();
         if (!at(ELSE_KEYWORD) && !at(SEMICOLON)) {
-            parseExpressionPreferringBlocks();
+            parseControlStructureBody();
         }
         if (at(SEMICOLON) && lookahead(1) == ELSE_KEYWORD) {
             advance(); // SEMICOLON
@@ -1500,7 +1553,7 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
 
             PsiBuilder.Marker elseBranch = mark();
             if (!at(SEMICOLON)) {
-                parseExpressionPreferringBlocks();
+                parseControlStructureBody();
             }
             elseBranch.done(ELSE);
         }
@@ -1573,12 +1626,6 @@ public class KotlinExpressionParsing extends AbstractKotlinParsing {
      * IDENTIFIER "@"
      */
     private void parseLabelDefinition() {
-        if (at(AT)) {
-            // recovery for empty label identifier
-            errorAndAdvance("Label must be named"); // AT
-            return;
-        }
-
         PsiBuilder.Marker labelWrap = mark();
         PsiBuilder.Marker mark = mark();
 

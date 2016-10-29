@@ -16,66 +16,35 @@
 
 package org.jetbrains.kotlin.resolve.jvm.platform
 
-import org.jetbrains.kotlin.builtins.DefaultBuiltIns
-import org.jetbrains.kotlin.descriptors.ModuleParameters
-import org.jetbrains.kotlin.name.FqName
-import org.jetbrains.kotlin.platform.JavaToKotlinClassMap
-import org.jetbrains.kotlin.platform.PlatformToKotlinClassMap
+import org.jetbrains.kotlin.platform.JvmBuiltIns
 import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.ImportPath
 import org.jetbrains.kotlin.resolve.PlatformConfigurator
 import org.jetbrains.kotlin.resolve.TargetPlatform
 import org.jetbrains.kotlin.resolve.scopes.DescriptorKindFilter
 import org.jetbrains.kotlin.resolve.scopes.MemberScope
+import org.jetbrains.kotlin.storage.LockBasedStorageManager
 import java.util.*
 
 object JvmPlatform : TargetPlatform("JVM") {
-    override val defaultModuleParameters = object : ModuleParameters {
-        override val platformToKotlinClassMap: PlatformToKotlinClassMap
-            get() = JavaToKotlinClassMap.INSTANCE
-        override val defaultImports: List<ImportPath>
-            get() = DEFAULT_IMPORTS_FOR_JVM
-        override val excludedImports: List<FqName>
-            get() = EXCLUDED_IMPORTS_FOR_JVM
+    override val defaultImports: List<ImportPath> = ArrayList<ImportPath>().apply {
+        addAll(Default.defaultImports)
+
+        add(ImportPath("java.lang.*"))
+        add(ImportPath("kotlin.jvm.*"))
+        add(ImportPath("kotlin.io.*"))
+
+        fun addAllClassifiersFromScope(scope: MemberScope) {
+            for (descriptor in scope.getContributedDescriptors(DescriptorKindFilter.CLASSIFIERS, MemberScope.ALL_NAME_FILTER)) {
+                add(ImportPath(DescriptorUtils.getFqNameSafe(descriptor), false))
+            }
+        }
+
+        val builtIns = JvmBuiltIns(LockBasedStorageManager.NO_LOCKS)
+        for (builtinPackageFragment in builtIns.builtInsPackageFragments) {
+            addAllClassifiersFromScope(builtinPackageFragment.getMemberScope())
+        }
     }
 
     override val platformConfigurator: PlatformConfigurator = JvmPlatformConfigurator
 }
-
-private val DEFAULT_IMPORTS_FOR_JVM: List<ImportPath> = ArrayList<ImportPath>().apply {
-    add(ImportPath("java.lang.*"))
-    add(ImportPath("kotlin.*"))
-    add(ImportPath("kotlin.annotation.*"))
-    add(ImportPath("kotlin.jvm.*"))
-    add(ImportPath("kotlin.collections.*"))
-    add(ImportPath("kotlin.coroutines.*"))
-    add(ImportPath("kotlin.ranges.*"))
-    add(ImportPath("kotlin.sequences.*"))
-    add(ImportPath("kotlin.text.*"))
-    add(ImportPath("kotlin.io.*"))
-
-    fun addAllClassifiersFromScope(scope: MemberScope) {
-        for (descriptor in scope.getContributedDescriptors(DescriptorKindFilter.CLASSIFIERS, MemberScope.ALL_NAME_FILTER)) {
-            add(ImportPath(DescriptorUtils.getFqNameSafe(descriptor), false))
-        }
-    }
-
-    val builtIns = DefaultBuiltIns.Instance
-    for (builtinPackageFragment in builtIns.builtInsPackageFragments) {
-        addAllClassifiersFromScope(builtinPackageFragment.getMemberScope())
-    }
-}
-
-private val EXCLUDED_IMPORTS_FOR_JVM: List<FqName> = listOf(
-        "Error",
-        "Exception",
-        "RuntimeException",
-        "IllegalArgumentException",
-        "IllegalStateException",
-        "IndexOutOfBoundsException",
-        "UnsupportedOperationException",
-        "NumberFormatException",
-        "NullPointerException",
-        "ClassCastException",
-        "AssertionError"
-).map { FqName("java.lang.$it") }

@@ -91,12 +91,12 @@ public class PackagePartCodegen extends MemberCodegen<KtFile> {
     @Override
     protected void generateBody() {
         for (KtDeclaration declaration : element.getDeclarations()) {
-            if (declaration instanceof KtNamedFunction || declaration instanceof KtProperty) {
-                genFunctionOrProperty(declaration);
+            if (declaration instanceof KtNamedFunction || declaration instanceof KtProperty || declaration instanceof KtTypeAlias) {
+                genSimpleMember(declaration);
             }
         }
 
-        if (state.getClassBuilderMode() == ClassBuilderMode.FULL) {
+        if (state.getClassBuilderMode().generateBodies) {
             generateInitializers(new Function0<ExpressionCodegen>() {
                 @Override
                 public ExpressionCodegen invoke() {

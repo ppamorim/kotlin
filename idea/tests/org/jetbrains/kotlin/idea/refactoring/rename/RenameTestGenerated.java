@@ -167,6 +167,12 @@ public class RenameTestGenerated extends AbstractRenameTest {
         doTest(fileName);
     }
 
+    @TestMetadata("classUsagesInTextFiles/classUsagesInTextFiles.test")
+    public void testClassUsagesInTextFiles_ClassUsagesInTextFiles() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/rename/classUsagesInTextFiles/classUsagesInTextFiles.test");
+        doTest(fileName);
+    }
+
     @TestMetadata("companionObject/companionObject.test")
     public void testCompanionObject_CompanionObject() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/rename/companionObject/companionObject.test");
@@ -182,6 +188,12 @@ public class RenameTestGenerated extends AbstractRenameTest {
     @TestMetadata("companionObjectWithNameMatchingClass/companionObject.test")
     public void testCompanionObjectWithNameMatchingClass_CompanionObject() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/rename/companionObjectWithNameMatchingClass/companionObject.test");
+        doTest(fileName);
+    }
+
+    @TestMetadata("fileNotUnderSourceRootWithNamesakeUnderSourceRoot/fileNotUnderSourceRootWithNamesakeUnderSourceRoot.test")
+    public void testFileNotUnderSourceRootWithNamesakeUnderSourceRoot_FileNotUnderSourceRootWithNamesakeUnderSourceRoot() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/rename/fileNotUnderSourceRootWithNamesakeUnderSourceRoot/fileNotUnderSourceRootWithNamesakeUnderSourceRoot.test");
         doTest(fileName);
     }
 
@@ -236,6 +248,18 @@ public class RenameTestGenerated extends AbstractRenameTest {
     @TestMetadata("noShadowingConflictForSiblingDeclarations/noShadowingConflictForSiblingDeclarations.test")
     public void testNoShadowingConflictForSiblingDeclarations_NoShadowingConflictForSiblingDeclarations() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/rename/noShadowingConflictForSiblingDeclarations/noShadowingConflictForSiblingDeclarations.test");
+        doTest(fileName);
+    }
+
+    @TestMetadata("objectAlias/objectAlias.test")
+    public void testObjectAlias_ObjectAlias() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/rename/objectAlias/objectAlias.test");
+        doTest(fileName);
+    }
+
+    @TestMetadata("objectAliasByRef/objectAliasByRef.test")
+    public void testObjectAliasByRef_ObjectAliasByRef() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/rename/objectAliasByRef/objectAliasByRef.test");
         doTest(fileName);
     }
 
@@ -1082,6 +1106,12 @@ public class RenameTestGenerated extends AbstractRenameTest {
     @TestMetadata("topLevelPropertyRedeclaration/topLevelPropertyRedeclaration.test")
     public void testTopLevelPropertyRedeclaration_TopLevelPropertyRedeclaration() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/rename/topLevelPropertyRedeclaration/topLevelPropertyRedeclaration.test");
+        doTest(fileName);
+    }
+
+    @TestMetadata("varInDoWhile/varInDoWhile.test")
+    public void testVarInDoWhile_VarInDoWhile() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/rename/varInDoWhile/varInDoWhile.test");
         doTest(fileName);
     }
 }

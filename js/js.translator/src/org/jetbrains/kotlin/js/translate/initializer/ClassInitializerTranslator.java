@@ -16,8 +16,8 @@
 
 package org.jetbrains.kotlin.js.translate.initializer;
 
+import com.google.dart.compiler.backend.js.JsReservedIdentifiers;
 import com.google.dart.compiler.backend.js.ast.*;
-import com.intellij.util.SmartList;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.kotlin.descriptors.*;
 import org.jetbrains.kotlin.js.translate.callTranslator.CallTranslator;
@@ -27,6 +27,7 @@ import org.jetbrains.kotlin.js.translate.context.UsageTracker;
 import org.jetbrains.kotlin.js.translate.declaration.DelegationTranslator;
 import org.jetbrains.kotlin.js.translate.general.AbstractTranslator;
 import org.jetbrains.kotlin.js.translate.reference.CallArgumentTranslator;
+import org.jetbrains.kotlin.js.translate.utils.AnnotationsUtils;
 import org.jetbrains.kotlin.js.translate.utils.JsAstUtils;
 import org.jetbrains.kotlin.js.translate.utils.jsAstUtils.AstUtilsKt;
 import org.jetbrains.kotlin.lexer.KtTokens;
@@ -35,7 +36,9 @@ import org.jetbrains.kotlin.psi.KtClassOrObject;
 import org.jetbrains.kotlin.psi.KtEnumEntry;
 import org.jetbrains.kotlin.psi.KtParameter;
 import org.jetbrains.kotlin.resolve.DescriptorUtils;
+import org.jetbrains.kotlin.resolve.calls.model.DefaultValueArgument;
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall;
+import org.jetbrains.kotlin.resolve.calls.model.ResolvedValueArgument;
 import org.jetbrains.kotlin.types.KotlinType;
 
 import java.util.ArrayList;
@@ -52,7 +55,6 @@ public final class ClassInitializerTranslator extends AbstractTranslator {
     @NotNull
     private final KtClassOrObject classDeclaration;
     @NotNull
-    private final List<JsStatement> initializerStatements = new SmartList<JsStatement>();
     private final JsFunction initFunction;
     private final TranslationContext context;
 
@@ -78,19 +80,29 @@ public final class ClassInitializerTranslator extends AbstractTranslator {
         ClassDescriptor classDescriptor = getClassDescriptor(context.bindingContext(), declaration);
         ConstructorDescriptor primaryConstructor = classDescriptor.getUnsubstitutedPrimaryConstructor();
 
-        Name name = classDescriptor.getName();
+        String functionName = AnnotationsUtils.getJsName(classDescriptor);
+        if (functionName == null) {
+            Name name = classDescriptor.getName();
+            if (!name.isSpecial()) {
+                functionName = name.asString();
+            }
+        }
 
         JsFunction ctorFunction;
         if (primaryConstructor != null) {
             ctorFunction = context.getFunctionObject(primaryConstructor);
         }
         else {
-            ctorFunction = new JsFunction(context.scope(), new JsBlock(), "fake constructor for " + name.asString());
+            ctorFunction = new JsFunction(context.scope(), new JsBlock(), "fake constructor for " + functionName);
         }
 
-        // TODO use name from JsName when class annotated by that
-        if (!name.isSpecial()) {
-            ctorFunction.setName(ctorFunction.getScope().declareName(name.asString()));
+        if (functionName != null) {
+            if (JsReservedIdentifiers.reservedGlobalSymbols.contains(functionName) ||
+                JsFunctionScope.Companion.getRESERVED_WORDS().contains(functionName)
+            ) {
+                functionName += "$";
+            }
+            ctorFunction.setName(ctorFunction.getScope().declareName(functionName));
         }
 
         return ctorFunction;
@@ -105,26 +117,15 @@ public final class ClassInitializerTranslator extends AbstractTranslator {
         if (primaryConstructor != null) {
             initFunction.getBody().getStatements().addAll(setDefaultValueForArguments(primaryConstructor, context()));
 
+            mayBeAddCallToSuperMethod(initFunction, classDescriptor);
+
             //NOTE: while we translate constructor parameters we also add property initializer statements
             // for properties declared as constructor parameters
             initFunction.getParameters().addAll(translatePrimaryConstructorParameters());
-
-            mayBeAddCallToSuperMethod(initFunction, classDescriptor);
         }
 
-        delegationTranslator.addInitCode(initializerStatements);
-        new InitializerVisitor(initializerStatements).traverseContainer(classDeclaration, context());
-
-        List<JsStatement> statements = initFunction.getBody().getStatements();
-
-        for (JsStatement statement : initializerStatements) {
-            if (statement instanceof JsBlock) {
-                statements.addAll(((JsBlock) statement).getStatements());
-            }
-            else {
-                statements.add(statement);
-            }
-        }
+        delegationTranslator.addInitCode(initFunction.getBody().getStatements());
+        new InitializerVisitor().traverseContainer(classDeclaration, context().innerBlock(initFunction.getBody()));
 
         return initFunction;
     }
@@ -170,7 +171,7 @@ public final class ClassInitializerTranslator extends AbstractTranslator {
                 JsExpression expression = CallTranslator.translate(context(), superCall, null);
                 JsExpression fixedInvocation = AstUtilsKt.toInvocationWith(expression, Collections.<JsExpression>emptyList(), 0,
                                                                            JsLiteral.THIS);
-                initializerStatements.add(0, fixedInvocation.makeStmt());
+                initFunction.getBody().getStatements().add(fixedInvocation.makeStmt());
             }
             else {
                 List<JsExpression> arguments = new ArrayList<JsExpression>();
@@ -203,7 +204,23 @@ public final class ClassInitializerTranslator extends AbstractTranslator {
                     }
                 }
 
-                addCallToSuperMethod(arguments, initializer);
+                if (superDescriptor.isPrimary()) {
+                    addCallToSuperMethod(arguments, initializer);
+                }
+                else {
+                    int maxValueArgumentIndex = 0;
+                    for (ValueParameterDescriptor arg : superCall.getValueArguments().keySet()) {
+                        ResolvedValueArgument resolvedArg = superCall.getValueArguments().get(arg);
+                        if (!(resolvedArg instanceof DefaultValueArgument)) {
+                            maxValueArgumentIndex = Math.max(maxValueArgumentIndex, arg.getIndex() + 1);
+                        }
+                    }
+                    int padSize = superDescriptor.getValueParameters().size() - maxValueArgumentIndex;
+                    while (padSize-- > 0) {
+                        arguments.add(Namer.getUndefinedExpression());
+                    }
+                    addCallToSuperSecondaryConstructor(arguments, superDescriptor);
+                }
             }
         }
     }
@@ -217,7 +234,15 @@ public final class ClassInitializerTranslator extends AbstractTranslator {
         JsInvocation call = new JsInvocation(Namer.getFunctionCallRef(Namer.superMethodNameRef(initializer.getName())));
         call.getArguments().add(JsLiteral.THIS);
         call.getArguments().addAll(arguments);
-        initializerStatements.add(0, call.makeStmt());
+        initFunction.getBody().getStatements().add(call.makeStmt());
+    }
+
+    private void addCallToSuperSecondaryConstructor(@NotNull List<JsExpression> arguments, @NotNull ConstructorDescriptor descriptor) {
+        JsExpression reference = context.getQualifiedReference(descriptor);
+        JsInvocation call = new JsInvocation(reference);
+        call.getArguments().addAll(arguments);
+        call.getArguments().add(JsLiteral.THIS);
+        initFunction.getBody().getStatements().add(call.makeStmt());
     }
 
     @NotNull
@@ -252,6 +277,7 @@ public final class ClassInitializerTranslator extends AbstractTranslator {
     }
 
     private void addInitializerOrPropertyDefinition(@NotNull JsNameRef initialValue, @NotNull PropertyDescriptor propertyDescriptor) {
-        initializerStatements.add(InitializerUtils.generateInitializerForProperty(context(), propertyDescriptor, initialValue));
+        initFunction.getBody().getStatements().add(
+                InitializerUtils.generateInitializerForProperty(context(), propertyDescriptor, initialValue));
     }
 }

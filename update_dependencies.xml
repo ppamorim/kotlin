@@ -1,7 +1,8 @@
 <project name="Update Dependencies" default="update" xmlns:if="ant:if" xmlns:unless="ant:unless">
+    <import file="common.xml" optional="false"/>
 
     <property name="automerge_dummy" value="This property is used to trick git merge. Do not delete empty lines around."/>
-    <property name="ideaVersion" value="2016.1.2"/>
+    <property name="ideaVersion" value="162.1812.17"/>
     <property name="idea.kotlin.branch" value="rc"/>
 
 
@@ -21,32 +22,15 @@
 
     <!-- Uncomment to enable force version increment in branch. Set override.version.disabled to temporary disable feature without commits -->
     <!--
-    <property name="override.version.url" value="https://teamcity.jetbrains.com/guestAuth/app/rest/builds/?locator=buildType:bt345,count:1${kotlin.bootstrap.branch.locator}"/>
+    <property name="override.version.branch" value="${kotlin.bootstrap.branch.locator}"/>
+    <property name="override.version.url" value="https://teamcity.jetbrains.com/guestAuth/app/rest/builds/?locator=buildType:bt345,count:1,branch:${override.version.branch}"/>
     -->
     <!--<property name="override.version.disabled" value="true"/>-->
-
-    <condition property="isWindows">
-        <os family="windows"/>
-    </condition>
-
-    <condition property="isMac">
-        <os family="mac"/>
-    </condition>
-
-    <condition property="isLinux">
-        <and>
-            <os family="unix"/>
-            <not>
-                <os family="mac"/>
-            </not>
-        </and>
-    </condition>
 
     <condition property="kotlinc.executable.path" value="kotlinc.bat" else="kotlinc">
         <os family="windows"/>
     </condition>
 
-    <property name="dependencies" value="${basedir}/dependencies"/>
     <property name="generators" value="${basedir}/generators"/>
 
     <property name="idea.dir" value="ideaSDK"/>
@@ -96,6 +80,12 @@
             idea.maven.version="144-SNAPSHOT"/>
     </target>
 
+    <target name="update_continuous_br162" depends="fetch-third-party,fetch-annotations">
+        <execute_update_with_idea_maven_artifacts
+            base.url="https://www.jetbrains.com/intellij-repository/snapshots/com/jetbrains/intellij/idea"
+            idea.maven.version="162-SNAPSHOT"/>
+    </target>
+
     <macrodef name="get-maven-library">
         <attribute name="prefix"/>
         <attribute name="lib"/>
@@ -126,11 +116,10 @@
         <attribute name="version"/>
         <attribute name="folderName"/>
         <sequential>
-            <!-- todo: temporary hack for unavailable archive.apache.org -->
-            <get src="https://bintray.com/artifact/download/kotlin/AntForKotlin/apache-ant-@{version}-bin.tar.gz"
+            <get src="http://archive.apache.org/dist/ant/binaries/apache-ant-@{version}-bin.tar.gz"
                  dest="${dependencies}/download/apache-ant-@{version}-bin.tar.gz" usetimestamp="true"/>
 
-            <get src="https://bintray.com/artifact/download/kotlin/AntForKotlin/apache-ant-@{version}-src.zip"
+            <get src="http://archive.apache.org/dist/ant/source/apache-ant-@{version}-src.zip"
                  dest="${dependencies}/apache-ant-@{version}-src.zip" usetimestamp="true"/>
 
             <delete dir="${dependencies}/@{folderName}" failonerror="false"/>
@@ -178,12 +167,6 @@
             <zipfileset src="${download}/${common.name}-freebsd-amd64.jar" includes="**" />
             <zipfileset src="${download}/${common.name}-freebsd-i386.jar" includes="**" />
         </jar>
-
-    </target>
-
-    <target name="make-dependency-dirs">
-        <mkdir dir="${dependencies}"/>
-        <mkdir dir="${dependencies}/download"/>
     </target>
 
     <target name="fetch-third-party" depends="make-dependency-dirs, make-native-platform-uberjar, fetch-idea-artifacts-for-compiler-tests">
@@ -678,7 +661,6 @@
                         <file file="@{idea.dir}/lib/log4j.jar"/>
                         <file file="@{idea.dir}/lib/xstream-1.4.8.jar"/>
                         <file file="@{idea.dir}/lib/xpp3-1.1.4-min.jar"/>
-                        <file file="@{idea.dir}/lib/jsr166e.jar"/>
                         <file file="@{idea.dir}/lib/asm-all.jar"/>
                         <file file="@{idea.dir}/lib/snappy-in-java-0.3.1.jar"/>
 
@@ -718,7 +700,7 @@
         <attribute name="idea.maven.version"/>
         <attribute name="base.repository.url"/>
 
-        <attribute name="download.dir" default="${dependencies}/idea"/>
+        <attribute name="download.dir" default="${dependencies}/idea${ideaVersion}"/>
 
         <sequential>
             <delete dir="@{download.dir}"/>
@@ -967,7 +949,7 @@
         <condition property="need.version.override">
             <and>
                 <isset property="override.version.url"/>
-                <equals arg1="${kotlin.bootstrap.branch}" arg2="${teamcity.build.branch}"/>
+                <equals arg1="${override.version.branch}" arg2="${teamcity.build.branch}"/>
                 <not>
                     <isset property="override.version.disabled"/>
                 </not>

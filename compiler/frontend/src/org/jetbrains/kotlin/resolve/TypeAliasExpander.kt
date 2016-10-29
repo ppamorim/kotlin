@@ -19,6 +19,7 @@ package org.jetbrains.kotlin.resolve
 import org.jetbrains.kotlin.descriptors.TypeAliasDescriptor
 import org.jetbrains.kotlin.descriptors.TypeParameterDescriptor
 import org.jetbrains.kotlin.descriptors.annotations.Annotations
+import org.jetbrains.kotlin.descriptors.annotations.CompositeAnnotations
 import org.jetbrains.kotlin.resolve.scopes.MemberScope
 import org.jetbrains.kotlin.types.*
 import org.jetbrains.kotlin.types.typeUtil.containsTypeAliasParameters
@@ -49,19 +50,34 @@ class TypeAliasExpander(
             "Type alias expansion: result for ${typeAliasExpansion.descriptor} is ${expandedProjection.projectionKind}, should be invariant"
         }
 
-        return if (withAbbreviatedType) {
-            val abbreviatedType = KotlinTypeFactory.simpleType(annotations,
-                                                               typeAliasExpansion.descriptor.typeConstructor,
-                                                               typeAliasExpansion.arguments,
-                                                               originalProjection.type.isMarkedNullable,
-                                                               MemberScope.Empty)
+        val expandedTypeWithExtraAnnotations = combineAnnotations(expandedType, annotations)
 
-            expandedType.withAbbreviation(abbreviatedType)
-        }
-        else {
-            expandedType
-        }
+        return if (withAbbreviatedType)
+            expandedTypeWithExtraAnnotations.withAbbreviation(typeAliasExpansion.createAbbreviation(originalProjection, annotations))
+        else
+            expandedTypeWithExtraAnnotations
     }
+
+    private fun combineAnnotations(type: SimpleType, annotations: Annotations): SimpleType {
+        val existingAnnotationTypes = type.annotations.getAllAnnotations().mapTo(hashSetOf<KotlinType>()) { it.annotation.type }
+
+        for (annotation in annotations) {
+            if (annotation.type in existingAnnotationTypes) {
+                reportStrategy.repeatedAnnotation(annotation)
+            }
+        }
+
+        return type.replace(newAnnotations = CompositeAnnotations(listOf(annotations, type.annotations)))
+    }
+
+    private fun TypeAliasExpansion.createAbbreviation(originalProjection: TypeProjection, annotations: Annotations) =
+            KotlinTypeFactory.simpleType(
+                    annotations,
+                    descriptor.typeConstructor,
+                    arguments,
+                    originalProjection.type.isMarkedNullable,
+                    MemberScope.Empty
+            )
 
     private fun expandTypeProjection(
             originalProjection: TypeProjection,
@@ -82,10 +98,8 @@ class TypeAliasExpander(
         val originalVariance =
                 if (originalProjection.projectionKind != Variance.INVARIANT)
                     originalProjection.projectionKind
-                else if (typeParameterDescriptor != null)
-                    typeParameterDescriptor.variance
                 else
-                    Variance.INVARIANT
+                    typeParameterDescriptor?.variance ?: Variance.INVARIANT
 
         val argumentVariance = typeAliasArgument.projectionKind
 
@@ -153,7 +167,11 @@ class TypeAliasExpander(
             }
             else -> {
                 val substitutedArguments = type.arguments.mapIndexed { i, originalArgument ->
-                    expandTypeProjection(originalArgument, typeAliasExpansion, typeConstructor.parameters[i], recursionDepth + 1)
+                    val projection = expandTypeProjection(
+                            originalArgument, typeAliasExpansion, typeConstructor.parameters[i], recursionDepth + 1)
+                    if (projection.isStarProjection) projection
+                    else TypeProjectionImpl(projection.projectionKind,
+                                            TypeUtils.makeNullableIfNeeded(projection.type, originalArgument.type.isMarkedNullable))
                 }
 
                 val substitutedType = type.replace(newArguments = substitutedArguments)

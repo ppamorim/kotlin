@@ -24,13 +24,14 @@ import com.intellij.psi.tree.IElementType
 import com.intellij.psi.tree.TokenSet
 import org.jetbrains.kotlin.KtNodeTypes
 import org.jetbrains.kotlin.idea.KotlinLanguage
+import org.jetbrains.kotlin.idea.core.formatter.KotlinCodeStyleSettings
+import org.jetbrains.kotlin.idea.formatter.NodeIndentStrategy.strategy
 import org.jetbrains.kotlin.kdoc.lexer.KDocTokens
+import org.jetbrains.kotlin.kdoc.parser.KDocElementTypes
+import org.jetbrains.kotlin.lexer.KtTokens
+import org.jetbrains.kotlin.lexer.KtTokens.*
 import org.jetbrains.kotlin.psi.KtDeclaration
 import java.util.*
-import org.jetbrains.kotlin.idea.formatter.NodeIndentStrategy.strategy
-import org.jetbrains.kotlin.idea.core.formatter.KotlinCodeStyleSettings
-import org.jetbrains.kotlin.kdoc.parser.KDocElementTypes
-import org.jetbrains.kotlin.lexer.KtTokens.*
 
 private val QUALIFIED_OPERATION = TokenSet.create(DOT, SAFE_ACCESS)
 private val KDOC_COMMENT_INDENT = 1
@@ -336,13 +337,18 @@ private val INDENT_RULES = arrayOf<NodeIndentStrategy>(
                 .set(Indent.getNormalIndent()),
 
         strategy("Indent for parts")
-                .`in`(KtNodeTypes.PROPERTY, KtNodeTypes.FUN, KtNodeTypes.DESTRUCTURING_DECLARATION)
-                .notForType(KtNodeTypes.BLOCK, FUN_KEYWORD, VAL_KEYWORD, VAR_KEYWORD)
+                .`in`(KtNodeTypes.PROPERTY, KtNodeTypes.FUN, KtNodeTypes.DESTRUCTURING_DECLARATION, KtNodeTypes.SECONDARY_CONSTRUCTOR)
+                .notForType(KtNodeTypes.BLOCK, FUN_KEYWORD, VAL_KEYWORD, VAR_KEYWORD, CONSTRUCTOR_KEYWORD)
                 .set(Indent.getContinuationWithoutFirstIndent()),
 
         strategy("Chained calls")
                 .`in`(KtNodeTypes.DOT_QUALIFIED_EXPRESSION, KtNodeTypes.SAFE_ACCESS_EXPRESSION)
                 .set(Indent.getContinuationWithoutFirstIndent(false)),
+
+        strategy("Colon of delegation list")
+                .`in`(KtNodeTypes.CLASS, KtNodeTypes.OBJECT_DECLARATION)
+                .forType(KtTokens.COLON)
+                .set(Indent.getNormalIndent(false)),
 
         strategy("Delegation list")
                 .`in`(KtNodeTypes.SUPER_TYPE_LIST, KtNodeTypes.INITIALIZER_LIST)

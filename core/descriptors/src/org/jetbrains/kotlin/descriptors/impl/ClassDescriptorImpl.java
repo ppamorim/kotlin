@@ -38,8 +38,8 @@ public class ClassDescriptorImpl extends ClassDescriptorBase {
     private final TypeConstructor typeConstructor;
 
     private MemberScope unsubstitutedMemberScope;
-    private Set<ConstructorDescriptor> constructors;
-    private ConstructorDescriptor primaryConstructor;
+    private Set<ClassConstructorDescriptor> constructors;
+    private ClassConstructorDescriptor primaryConstructor;
 
     public ClassDescriptorImpl(
             @NotNull DeclarationDescriptor containingDeclaration,
@@ -53,15 +53,13 @@ public class ClassDescriptorImpl extends ClassDescriptorBase {
         this.modality = modality;
         this.kind = kind;
 
-        this.typeConstructor = new ClassTypeConstructorImpl(
-                this, Annotations.Companion.getEMPTY(), false, Collections.<TypeParameterDescriptor>emptyList(), supertypes
-        );
+        this.typeConstructor = new ClassTypeConstructorImpl(this, false, Collections.<TypeParameterDescriptor>emptyList(), supertypes);
     }
 
     public final void initialize(
             @NotNull MemberScope unsubstitutedMemberScope,
-            @NotNull Set<ConstructorDescriptor> constructors,
-            @Nullable ConstructorDescriptor primaryConstructor
+            @NotNull Set<ClassConstructorDescriptor> constructors,
+            @Nullable ClassConstructorDescriptor primaryConstructor
     ) {
         this.unsubstitutedMemberScope = unsubstitutedMemberScope;
         this.constructors = constructors;
@@ -82,7 +80,7 @@ public class ClassDescriptorImpl extends ClassDescriptorBase {
 
     @NotNull
     @Override
-    public Collection<ConstructorDescriptor> getConstructors() {
+    public Collection<ClassConstructorDescriptor> getConstructors() {
         return constructors;
     }
 
@@ -116,7 +114,7 @@ public class ClassDescriptorImpl extends ClassDescriptorBase {
     }
 
     @Override
-    public ConstructorDescriptor getUnsubstitutedPrimaryConstructor() {
+    public ClassConstructorDescriptor getUnsubstitutedPrimaryConstructor() {
         return primaryConstructor;
     }
 

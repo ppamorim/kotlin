@@ -47,6 +47,18 @@ public class CheckLocalVariablesTableTestGenerated extends AbstractCheckLocalVar
         doTest(fileName);
     }
 
+    @TestMetadata("destructuringInLambdas.kt")
+    public void testDestructuringInLambdas() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/checkLocalVariablesTable/destructuringInLambdas.kt");
+        doTest(fileName);
+    }
+
+    @TestMetadata("destructuringInlineLambda.kt")
+    public void testDestructuringInlineLambda() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/checkLocalVariablesTable/destructuringInlineLambda.kt");
+        doTest(fileName);
+    }
+
     @TestMetadata("inlineLambdaWithItParam.kt")
     public void testInlineLambdaWithItParam() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/checkLocalVariablesTable/inlineLambdaWithItParam.kt");
@@ -104,6 +116,12 @@ public class CheckLocalVariablesTableTestGenerated extends AbstractCheckLocalVar
     @TestMetadata("localFun.kt")
     public void testLocalFun() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/checkLocalVariablesTable/localFun.kt");
+        doTest(fileName);
+    }
+
+    @TestMetadata("underscoreNames.kt")
+    public void testUnderscoreNames() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/checkLocalVariablesTable/underscoreNames.kt");
         doTest(fileName);
     }
 }

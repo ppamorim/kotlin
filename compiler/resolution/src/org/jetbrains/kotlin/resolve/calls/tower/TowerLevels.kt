@@ -17,11 +17,13 @@
 package org.jetbrains.kotlin.resolve.calls.tower
 
 import org.jetbrains.kotlin.descriptors.*
+import org.jetbrains.kotlin.descriptors.impl.TypeAliasConstructorDescriptor
 import org.jetbrains.kotlin.descriptors.impl.TypeAliasConstructorDescriptorImpl
 import org.jetbrains.kotlin.incremental.components.LookupLocation
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.resolve.calls.smartcasts.getReceiverValueWithSmartCast
 import org.jetbrains.kotlin.resolve.calls.util.FakeCallableDescriptorForObject
+import org.jetbrains.kotlin.resolve.calls.util.FakeCallableDescriptorForTypeAliasObject
 import org.jetbrains.kotlin.resolve.coroutine.CoroutineReceiverValue
 import org.jetbrains.kotlin.resolve.coroutine.createCoroutineSuspensionFunctionView
 import org.jetbrains.kotlin.resolve.descriptorUtil.HIDES_MEMBERS_NAME_LIST
@@ -159,7 +161,7 @@ internal class QualifierScopeTowerLevel(scopeTower: ImplicitScopeTower, val qual
             }
 
     override fun getFunctions(name: Name, extensionReceiver: ReceiverValueWithSmartCastInfo?) = qualifier.staticScope
-            .getContributedFunctionsAndConstructors(name, location).map {
+            .getContributedFunctionsAndConstructors(name, location, scopeTower.syntheticConstructorsProvider).map {
                 createCandidateDescriptor(it, dispatchReceiver = null)
             }
 }
@@ -170,7 +172,7 @@ internal open class ScopeBasedTowerLevel protected constructor(
         private val resolutionScope: ResolutionScope
 ) : AbstractScopeTowerLevel(scopeTower) {
 
-    internal constructor(scopeTower: ImplicitScopeTower, lexicalScope: LexicalScope): this(scopeTower, lexicalScope as ResolutionScope)
+    internal constructor(scopeTower: ImplicitScopeTower, lexicalScope: LexicalScope) : this(scopeTower, lexicalScope as ResolutionScope)
 
     override fun getVariables(name: Name, extensionReceiver: ReceiverValueWithSmartCastInfo?): Collection<CandidateWithBoundDispatchReceiver<VariableDescriptor>>
             = resolutionScope.getContributedVariables(name, location).map {
@@ -183,7 +185,7 @@ internal open class ScopeBasedTowerLevel protected constructor(
             }
 
     override fun getFunctions(name: Name, extensionReceiver: ReceiverValueWithSmartCastInfo?): Collection<CandidateWithBoundDispatchReceiver<FunctionDescriptor>>
-            = resolutionScope.getContributedFunctionsAndConstructors(name, location).map {
+            = resolutionScope.getContributedFunctionsAndConstructors(name, location, scopeTower.syntheticConstructorsProvider).map {
                 createCandidateDescriptor(it, dispatchReceiver = null)
             }
 }
@@ -258,11 +260,17 @@ private fun KotlinType?.getInnerConstructors(name: Name, location: LookupLocatio
     return classifierDescriptor?.constructors?.filter { it.dispatchReceiverParameter != null } ?: emptyList()
 }
 
-private fun ResolutionScope.getContributedFunctionsAndConstructors(name: Name, location: LookupLocation): Collection<FunctionDescriptor> {
+private fun ResolutionScope.getContributedFunctionsAndConstructors(
+        name: Name,
+        location: LookupLocation,
+        syntheticConstructorsProvider: SyntheticConstructorsProvider
+): Collection<FunctionDescriptor> {
     val classifier = getContributedClassifier(name, location)
     return getContributedFunctions(name, location) +
            (getClassWithConstructors(classifier)?.constructors?.filter { it.dispatchReceiverParameter == null } ?: emptyList()) +
-           (classifier?.getTypeAliasConstructors() ?: emptyList())
+           (classifier?.getTypeAliasConstructors()?.filter { it.dispatchReceiverParameter == null } ?: emptyList()) +
+           (classifier?.let { syntheticConstructorsProvider.getSyntheticConstructors(it, location) }
+                    ?.filter { it.dispatchReceiverParameter == null } ?: emptyList())
 }
 
 private fun ResolutionScope.getContributedObjectVariables(name: Name, location: LookupLocation): Collection<VariableDescriptor> {
@@ -273,7 +281,12 @@ private fun ResolutionScope.getContributedObjectVariables(name: Name, location: 
 fun getFakeDescriptorForObject(classifier: ClassifierDescriptor?): FakeCallableDescriptorForObject? =
         when (classifier) {
             is TypeAliasDescriptor ->
-                getFakeDescriptorForObject(classifier.classDescriptor)
+                classifier.classDescriptor?.let { classDescriptor ->
+                    if (classDescriptor.hasClassValueDescriptor)
+                        FakeCallableDescriptorForTypeAliasObject(classifier)
+                    else
+                        null
+                }
             is ClassDescriptor ->
                 if (classifier.hasClassValueDescriptor)
                     FakeCallableDescriptorForObject(classifier)
@@ -291,7 +304,7 @@ private fun getClassWithConstructors(classifier: ClassifierDescriptor?): ClassDe
 private val ClassDescriptor.canHaveCallableConstructors: Boolean
     get() = !ErrorUtils.isError(this) && !kind.isSingleton
 
-fun ClassifierDescriptor.getTypeAliasConstructors(): Collection<ConstructorDescriptor> {
+fun ClassifierDescriptor.getTypeAliasConstructors(): Collection<TypeAliasConstructorDescriptor> {
     if (this !is TypeAliasDescriptor) return emptyList()
 
     val classDescriptor = this.classDescriptor ?: return emptyList()

@@ -41,6 +41,12 @@ public class CompileKotlinAgainstKotlinTestGenerated extends AbstractCompileKotl
         doTest(fileName);
     }
 
+    @TestMetadata("annotationsOnTypeAliases.kt")
+    public void testAnnotationsOnTypeAliases() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/compileKotlinAgainstKotlin/annotationsOnTypeAliases.kt");
+        doTest(fileName);
+    }
+
     @TestMetadata("callsToMultifileClassFromOtherPackage.kt")
     public void testCallsToMultifileClassFromOtherPackage() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/compileKotlinAgainstKotlin/callsToMultifileClassFromOtherPackage.kt");
@@ -140,6 +146,18 @@ public class CompileKotlinAgainstKotlinTestGenerated extends AbstractCompileKotl
     @TestMetadata("kotlinPropertyAsAnnotationParameter.kt")
     public void testKotlinPropertyAsAnnotationParameter() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/compileKotlinAgainstKotlin/kotlinPropertyAsAnnotationParameter.kt");
+        doTest(fileName);
+    }
+
+    @TestMetadata("kt14012.kt")
+    public void testKt14012() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/compileKotlinAgainstKotlin/kt14012.kt");
+        doTest(fileName);
+    }
+
+    @TestMetadata("kt14012_multi.kt")
+    public void testKt14012_multi() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/compileKotlinAgainstKotlin/kt14012_multi.kt");
         doTest(fileName);
     }
 

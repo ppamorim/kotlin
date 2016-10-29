@@ -19,11 +19,14 @@ package kotlin.reflect.jvm.internal
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
 import org.jetbrains.kotlin.descriptors.Visibilities
 import org.jetbrains.kotlin.descriptors.Visibility
+import org.jetbrains.kotlin.descriptors.annotations.Annotated
 import org.jetbrains.kotlin.load.java.components.RuntimeSourceElementFactory
 import org.jetbrains.kotlin.load.java.reflect.tryLoadClass
+import org.jetbrains.kotlin.load.java.structure.reflect.ReflectJavaAnnotation
 import org.jetbrains.kotlin.load.java.structure.reflect.ReflectJavaClass
 import org.jetbrains.kotlin.load.java.structure.reflect.safeClassLoader
 import org.jetbrains.kotlin.load.kotlin.KotlinJvmBinarySourceElement
+import org.jetbrains.kotlin.load.kotlin.reflect.ReflectAnnotationSource
 import org.jetbrains.kotlin.load.kotlin.reflect.ReflectKotlinClass
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.platform.JavaToKotlinClassMap
@@ -48,7 +51,7 @@ internal fun ClassDescriptor.toJavaClass(): Class<*>? {
         else -> {
             // If this is neither a Kotlin class nor a Java class, it is either a built-in or some fake class descriptor like the one
             // that's created for java.io.Serializable in JvmBuiltInsSettings
-            val classId = JavaToKotlinClassMap.INSTANCE.mapKotlinToJava(DescriptorUtils.getFqName(this)) ?: classId
+            val classId = JavaToKotlinClassMap.INSTANCE.mapKotlinToJava(DescriptorUtils.getFqName(this)) ?: classId!!
             val packageName = classId.packageFqName.asString()
             val className = classId.relativeClassName.asString()
             // All pseudo-classes like kotlin.String.Companion must be accessible from the current class loader
@@ -83,6 +86,16 @@ internal fun Visibility.toKVisibility(): KVisibility? =
             Visibilities.INTERNAL -> KVisibility.INTERNAL
             Visibilities.PRIVATE, Visibilities.PRIVATE_TO_THIS -> KVisibility.PRIVATE
             else -> null
+        }
+
+internal fun Annotated.computeAnnotations(): List<Annotation> =
+        annotations.mapNotNull {
+            val source = it.source
+            when (source) {
+                is ReflectAnnotationSource -> source.annotation
+                is RuntimeSourceElementFactory.RuntimeSourceElement -> (source.javaElement as? ReflectJavaAnnotation)?.annotation
+                else -> null
+            }
         }
 
 // TODO: wrap other exceptions

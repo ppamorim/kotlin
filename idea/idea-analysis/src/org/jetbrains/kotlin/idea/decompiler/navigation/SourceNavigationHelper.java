@@ -36,16 +36,16 @@ import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.stubs.StringStubIndexExtension;
 import com.intellij.util.containers.ContainerUtil;
 import gnu.trove.THashSet;
+import kotlin.collections.CollectionsKt;
+import kotlin.jvm.functions.Function1;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 import org.jetbrains.kotlin.builtins.DefaultBuiltIns;
-import org.jetbrains.kotlin.config.LanguageVersion;
+import org.jetbrains.kotlin.config.LanguageVersionSettingsImpl;
 import org.jetbrains.kotlin.context.ContextKt;
 import org.jetbrains.kotlin.context.MutableModuleContext;
 import org.jetbrains.kotlin.descriptors.CallableDescriptor;
-import org.jetbrains.kotlin.descriptors.ModuleDescriptorKt;
-import org.jetbrains.kotlin.descriptors.ModuleParameters;
 import org.jetbrains.kotlin.frontend.di.InjectionKt;
 import org.jetbrains.kotlin.idea.stubindex.*;
 import org.jetbrains.kotlin.idea.util.ProjectRootsUtil;
@@ -54,11 +54,9 @@ import org.jetbrains.kotlin.name.ClassId;
 import org.jetbrains.kotlin.name.FqName;
 import org.jetbrains.kotlin.name.Name;
 import org.jetbrains.kotlin.platform.JavaToKotlinClassMap;
-import org.jetbrains.kotlin.platform.PlatformToKotlinClassMap;
 import org.jetbrains.kotlin.psi.*;
 import org.jetbrains.kotlin.resolve.BindingTraceContext;
 import org.jetbrains.kotlin.resolve.TargetPlatform;
-import org.jetbrains.kotlin.resolve.jvm.platform.JvmPlatform;
 import org.jetbrains.kotlin.resolve.lazy.KotlinCodeAnalyzer;
 import org.jetbrains.kotlin.resolve.lazy.ResolveSession;
 import org.jetbrains.kotlin.resolve.lazy.declarations.FileBasedDeclarationProviderFactory;
@@ -199,6 +197,8 @@ public class SourceNavigationHelper {
             return null;
         }
 
+        candidates = filterByOrderEntries(declaration, candidates);
+
         if (!forceResolve) {
             candidates = filterByReceiverPresenceAndParametersCount(declaration, candidates);
 
@@ -235,17 +235,8 @@ public class SourceNavigationHelper {
             @NotNull Collection<KtNamedDeclaration> candidates,
             @NotNull Project project
     ) {
-
-        TargetPlatform platform = TargetPlatform.Default.INSTANCE;
-        ModuleParameters defaultJvmModuleParameters = JvmPlatform.INSTANCE.getDefaultModuleParameters();
         MutableModuleContext newModuleContext = ContextKt.ContextForNewModule(
-                project, Name.special("<library module>"),
-                ModuleDescriptorKt.ModuleParameters(
-                        defaultJvmModuleParameters.getDefaultImports(),
-                        defaultJvmModuleParameters.getExcludedImports(),
-                        PlatformToKotlinClassMap.EMPTY
-                ),
-                DefaultBuiltIns.getInstance()
+                ContextKt.ProjectContext(project), Name.special("<library module>"), DefaultBuiltIns.getInstance()
         );
 
         newModuleContext.setDependencies(newModuleContext.getModule(), newModuleContext.getModule().getBuiltIns().getBuiltInsModule());
@@ -259,8 +250,8 @@ public class SourceNavigationHelper {
                 newModuleContext,
                 providerFactory,
                 new BindingTraceContext(),
-                platform,
-                LanguageVersion.LATEST // TODO: see KT-12410
+                TargetPlatform.Default.INSTANCE,
+                LanguageVersionSettingsImpl.DEFAULT // TODO: see KT-12410
         );
 
         newModuleContext.initializeModuleContents(resolveSession.getPackageFragmentProvider());
@@ -338,6 +329,26 @@ public class SourceNavigationHelper {
                 return name.equals(declaration.getNameAsSafeName());
             }
         });
+    }
+
+    @NotNull
+    private static List<KtNamedDeclaration> filterByOrderEntries(
+            @NotNull KtNamedDeclaration declaration,
+            @NotNull Collection<KtNamedDeclaration> candidates
+    ) {
+        final ProjectFileIndex fileIndex = ProjectRootManager.getInstance(declaration.getProject()).getFileIndex();
+        final List<OrderEntry> orderEntries = fileIndex.getOrderEntriesForFile(declaration.getContainingFile().getVirtualFile());
+
+        return CollectionsKt.filter(
+                candidates,
+                new Function1<KtNamedDeclaration, Boolean>() {
+                    @Override
+                    public Boolean invoke(KtNamedDeclaration candidate) {
+                        List<OrderEntry> candidateOrderEntries = fileIndex.getOrderEntriesForFile(candidate.getContainingFile().getVirtualFile());
+                        return ContainerUtil.intersects(orderEntries, candidateOrderEntries);
+                    }
+                }
+        );
     }
 
     @NotNull

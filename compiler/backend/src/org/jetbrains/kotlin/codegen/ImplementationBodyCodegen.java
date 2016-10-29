@@ -36,10 +36,12 @@ import org.jetbrains.kotlin.codegen.inline.InlineCodegenUtil;
 import org.jetbrains.kotlin.codegen.signature.BothSignatureWriter;
 import org.jetbrains.kotlin.codegen.signature.JvmSignatureWriter;
 import org.jetbrains.kotlin.codegen.state.GenerationState;
+import org.jetbrains.kotlin.codegen.state.KotlinTypeMapper;
 import org.jetbrains.kotlin.descriptors.*;
 import org.jetbrains.kotlin.incremental.components.NoLookupLocation;
 import org.jetbrains.kotlin.lexer.KtTokens;
 import org.jetbrains.kotlin.load.java.JvmAbi;
+import org.jetbrains.kotlin.load.java.descriptors.JavaClassDescriptor;
 import org.jetbrains.kotlin.name.FqName;
 import org.jetbrains.kotlin.name.Name;
 import org.jetbrains.kotlin.psi.*;
@@ -47,10 +49,7 @@ import org.jetbrains.kotlin.resolve.BindingContext;
 import org.jetbrains.kotlin.resolve.DescriptorToSourceUtils;
 import org.jetbrains.kotlin.resolve.DescriptorUtils;
 import org.jetbrains.kotlin.resolve.calls.callUtil.CallUtilKt;
-import org.jetbrains.kotlin.resolve.calls.model.DefaultValueArgument;
-import org.jetbrains.kotlin.resolve.calls.model.ExpressionValueArgument;
-import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall;
-import org.jetbrains.kotlin.resolve.calls.model.VarargValueArgument;
+import org.jetbrains.kotlin.resolve.calls.model.*;
 import org.jetbrains.kotlin.resolve.descriptorUtil.DescriptorUtilsKt;
 import org.jetbrains.kotlin.resolve.jvm.diagnostics.JvmDeclarationOrigin;
 import org.jetbrains.kotlin.resolve.jvm.diagnostics.JvmDeclarationOriginKt;
@@ -90,8 +89,8 @@ import static org.jetbrains.org.objectweb.asm.Opcodes.*;
 public class ImplementationBodyCodegen extends ClassBodyCodegen {
     private static final String ENUM_VALUES_FIELD_NAME = "$VALUES";
     private Type superClassAsmType;
-    @Nullable // null means java/lang/Object
-    private KotlinType superClassType;
+    @NotNull
+    private SuperClassInfo superClassInfo;
     private final Type classAsmType;
     private final boolean isLocal;
 
@@ -154,7 +153,7 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
 
             if (!ktClass.hasModifier(KtTokens.OPEN_KEYWORD) && !isAbstract) {
                 // Light-class mode: Do not make enum classes final since PsiClass corresponding to enum is expected to be inheritable from
-                isFinal = !(ktClass.isEnum() && state.getClassBuilderMode() != ClassBuilderMode.FULL);
+                isFinal = !(ktClass.isEnum() && !state.getClassBuilderMode().generateBodies);
             }
             isStatic = !ktClass.isInner();
         }
@@ -165,8 +164,8 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
 
         int access = 0;
 
-        if (state.getClassBuilderMode() != ClassBuilderMode.FULL && !DescriptorUtils.isTopLevelDeclaration(descriptor)) {
-            // ClassBuilderMode.LIGHT_CLASSES means we are generating light classes & looking at a nested or inner class
+        if (!state.getClassBuilderMode().generateBodies && !DescriptorUtils.isTopLevelDeclaration(descriptor)) {
+            // !ClassBuilderMode.generateBodies means we are generating light classes & looking at a nested or inner class
             // Light class generation is implemented so that Cls-classes only read bare code of classes,
             // without knowing whether these classes are inner or not (see ClassStubBuilder.EMPTY_STRATEGY)
             // Thus we must write full accessibility flags on inner classes in this mode
@@ -231,7 +230,7 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
 
     @Override
     protected void generateDefaultImplsIfNeeded() {
-        if (isInterface(descriptor) && !isLocal) {
+        if (isInterface(descriptor) && !isLocal && (!isJvm8Interface(descriptor, state) || state.getGenerateDefaultImplsForJvm8())) {
             Type defaultImplsType = state.getTypeMapper().mapDefaultImpls(descriptor);
             ClassBuilder defaultImplsBuilder =
                     state.getFactory().newVisitor(JvmDeclarationOriginKt.DefaultImpls(myClass, descriptor), defaultImplsType, myClass.getContainingFile());
@@ -251,7 +250,7 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
 
     private void writeEnclosingMethod() {
         // Do not emit enclosing method in "light-classes mode" since currently we generate local light classes as if they're top level
-        if (state.getClassBuilderMode() != ClassBuilderMode.FULL) {
+        if (!state.getClassBuilderMode().generateBodies) {
             return;
         }
 
@@ -284,17 +283,27 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
 
     @NotNull
     private JvmClassSignature signature() {
+        return signature(descriptor, classAsmType, superClassInfo, typeMapper);
+    }
+
+    @NotNull
+    public static JvmClassSignature signature(
+            @NotNull ClassDescriptor descriptor,
+            @NotNull Type classAsmType,
+            @NotNull SuperClassInfo superClassInfo,
+            @NotNull KotlinTypeMapper typeMapper
+    ) {
         JvmSignatureWriter sw = new BothSignatureWriter(BothSignatureWriter.Mode.CLASS);
 
         typeMapper.writeFormalTypeParameters(descriptor.getDeclaredTypeParameters(), sw);
 
         sw.writeSuperclass();
-        if (superClassType == null) {
-            sw.writeClassBegin(superClassAsmType);
+        if (superClassInfo.getKotlinType() == null) {
+            sw.writeClassBegin(superClassInfo.getType());
             sw.writeClassEnd();
         }
         else {
-            typeMapper.mapSupertype(superClassType, sw);
+            typeMapper.mapSupertype(superClassInfo.getKotlinType(), sw);
         }
         sw.writeSuperclassEnd();
 
@@ -325,26 +334,13 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
 
         superInterfaces.addAll(kotlinMarkerInterfaces);
 
-        return new JvmClassSignature(classAsmType.getInternalName(), superClassAsmType.getInternalName(),
+        return new JvmClassSignature(classAsmType.getInternalName(), superClassInfo.getType().getInternalName(),
                                      new ArrayList<String>(superInterfaces), sw.makeJavaGenericSignature());
     }
 
-    protected void getSuperClass() {
-        superClassAsmType = OBJECT_TYPE;
-        superClassType = null;
-
-        if (descriptor.getKind() == ClassKind.INTERFACE) {
-            return;
-        }
-
-        for (KotlinType supertype : descriptor.getTypeConstructor().getSupertypes()) {
-            ClassifierDescriptor superClass = supertype.getConstructor().getDeclarationDescriptor();
-            if (superClass != null && !isJvmInterface(superClass)) {
-                superClassAsmType = typeMapper.mapClass(superClass);
-                superClassType = supertype;
-                return;
-            }
-        }
+    private void getSuperClass() {
+        superClassInfo = SuperClassInfo.getSuperClassInfo(descriptor, typeMapper);
+        superClassAsmType = superClassInfo.getType();
     }
 
     @Override
@@ -367,7 +363,7 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
 
         generateFunctionsForDataClasses();
 
-        new CollectionStubMethodGenerator(state, descriptor, functionCodegen, v).generate();
+        new CollectionStubMethodGenerator(typeMapper, descriptor).generate(functionCodegen, v);
 
         generateToArray();
 
@@ -383,7 +379,7 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
         try {
             lookupConstructorExpressionsInClosureIfPresent();
             generatePrimaryConstructor(delegationFieldsInfo);
-            for (ConstructorDescriptor secondaryConstructor : DescriptorUtilsKt.getSecondaryConstructors(descriptor)) {
+            for (ClassConstructorDescriptor secondaryConstructor : DescriptorUtilsKt.getSecondaryConstructors(descriptor)) {
                 generateSecondaryConstructor(secondaryConstructor);
             }
         }
@@ -430,8 +426,15 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
     private void generateToArray() {
         if (descriptor.getKind() == ClassKind.INTERFACE) return;
 
-        KotlinBuiltIns builtIns = DescriptorUtilsKt.getBuiltIns(descriptor);
+        final KotlinBuiltIns builtIns = DescriptorUtilsKt.getBuiltIns(descriptor);
         if (!isSubclass(descriptor, builtIns.getCollection())) return;
+
+        if (CollectionsKt.any(DescriptorUtilsKt.getAllSuperclassesWithoutAny(descriptor), new Function1<ClassDescriptor, Boolean>() {
+            @Override
+            public Boolean invoke(ClassDescriptor classDescriptor) {
+                return !(classDescriptor instanceof JavaClassDescriptor) && isSubclass(classDescriptor, builtIns.getCollection());
+            }
+        })) return;
 
         Collection<SimpleFunctionDescriptor> functions = descriptor.getDefaultType().getMemberScope().getContributedFunctions(
                 Name.identifier("toArray"), NoLookupLocation.FROM_BACKEND
@@ -457,7 +460,8 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
         }
 
         if (!hasGenericToArray) {
-            MethodVisitor mv = v.newMethod(NO_ORIGIN, ACC_PUBLIC, "toArray", "([Ljava/lang/Object;)[Ljava/lang/Object;", null, null);
+            MethodVisitor mv = v.newMethod(
+                    NO_ORIGIN, ACC_PUBLIC, "toArray", "([Ljava/lang/Object;)[Ljava/lang/Object;", "<T:Ljava/lang/Object;>([TT;)[TT;", null);
 
             InstructionAdapter iv = new InstructionAdapter(mv);
             mv.visitCode();
@@ -796,7 +800,7 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
                 JvmDeclarationOriginKt.OtherOrigin(myClass, valuesFunction), ACC_PUBLIC | ACC_STATIC, ENUM_VALUES.asString(),
                 "()" + type.getDescriptor(), null, null
         );
-        if (state.getClassBuilderMode() != ClassBuilderMode.FULL) return;
+        if (!state.getClassBuilderMode().generateBodies) return;
 
         mv.visitCode();
         mv.visitFieldInsn(GETSTATIC, classAsmType.getInternalName(), ENUM_VALUES_FIELD_NAME, type.getDescriptor());
@@ -811,12 +815,12 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
                 CollectionsKt.single(descriptor.getStaticScope().getContributedFunctions(ENUM_VALUE_OF, NoLookupLocation.FROM_BACKEND), new Function1<FunctionDescriptor, Boolean>() {
                     @Override
                     public Boolean invoke(FunctionDescriptor descriptor) {
-                        return CodegenUtil.isEnumValueOfMethod(descriptor);
+                        return DescriptorUtilsKt.isEnumValueOfMethod(descriptor);
                     }
                 });
         MethodVisitor mv = v.newMethod(JvmDeclarationOriginKt.OtherOrigin(myClass, valueOfFunction), ACC_PUBLIC | ACC_STATIC, ENUM_VALUE_OF.asString(),
                                        "(Ljava/lang/String;)" + classAsmType.getDescriptor(), null, null);
-        if (state.getClassBuilderMode() != ClassBuilderMode.FULL) return;
+        if (!state.getClassBuilderMode().generateBodies) return;
 
         mv.visitCode();
         mv.visitLdcInsn(classAsmType);
@@ -836,7 +840,7 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
                        ACC_PUBLIC | ACC_STATIC | ACC_FINAL,
                        field.name, field.type.getDescriptor(), null, null);
 
-            if (state.getClassBuilderMode() != ClassBuilderMode.FULL) return;
+            if (!state.getClassBuilderMode().generateBodies) return;
             // Invoke the object constructor but ignore the result because INSTANCE will be initialized in the first line of <init>
             InstructionAdapter v = createOrGetClInitCodegen().v;
             markLineNumberForElement(element, v);
@@ -876,7 +880,7 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
             //This field are always static and final so if it has constant initializer don't do anything in clinit,
             //field would be initialized via default value in v.newField(...) - see JVM SPEC Ch.4
             // TODO: test this code
-            if (state.getClassBuilderMode() == ClassBuilderMode.FULL && info.defaultValue == null) {
+            if (state.getClassBuilderMode().generateBodies && info.defaultValue == null) {
                 ExpressionCodegen codegen = createOrGetClInitCodegen();
                 int companionObjectIndex = putCompanionObjectInLocalVar(codegen);
                 StackValue.local(companionObjectIndex, OBJECT_TYPE).put(OBJECT_TYPE, codegen.v);
@@ -919,7 +923,7 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
     private void generatePrimaryConstructor(final DelegationFieldsInfo delegationFieldsInfo) {
         if (isInterface(descriptor) || isAnnotationClass(descriptor)) return;
 
-        final ConstructorDescriptor constructorDescriptor = descriptor.getUnsubstitutedPrimaryConstructor();
+        final ClassConstructorDescriptor constructorDescriptor = descriptor.getUnsubstitutedPrimaryConstructor();
         if (constructorDescriptor == null) return;
 
         ConstructorContext constructorContext = context.intoConstructor(constructorDescriptor);
@@ -942,7 +946,7 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
         new DefaultParameterValueSubstitutor(state).generatePrimaryConstructorOverloadsIfNeeded(constructorDescriptor, v, this, kind, myClass);
     }
 
-    private void generateSecondaryConstructor(@NotNull final ConstructorDescriptor constructorDescriptor) {
+    private void generateSecondaryConstructor(@NotNull final ClassConstructorDescriptor constructorDescriptor) {
         if (!canHaveDeclaredConstructors(descriptor)) return;
 
         ConstructorContext constructorContext = context.intoConstructor(constructorDescriptor);
@@ -969,7 +973,7 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
     }
 
     private void generatePrimaryConstructorImpl(
-            @NotNull ConstructorDescriptor constructorDescriptor,
+            @NotNull ClassConstructorDescriptor constructorDescriptor,
             @NotNull ExpressionCodegen codegen,
             @NotNull DelegationFieldsInfo fieldsInfo,
             @Nullable KtPrimaryConstructor primaryConstructor
@@ -1030,7 +1034,7 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
     }
 
     private void generateSecondaryConstructorImpl(
-            @NotNull ConstructorDescriptor constructorDescriptor,
+            @NotNull ClassConstructorDescriptor constructorDescriptor,
             @NotNull ExpressionCodegen codegen
     ) {
         InstructionAdapter iv = codegen.v;
@@ -1043,7 +1047,7 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
         ResolvedCall<ConstructorDescriptor> constructorDelegationCall =
                 getDelegationConstructorCall(bindingContext, constructorDescriptor);
         ConstructorDescriptor delegateConstructor = constructorDelegationCall == null ? null :
-                                                     constructorDelegationCall.getResultingDescriptor();
+                                                    constructorDelegationCall.getResultingDescriptor();
 
         generateDelegatorToConstructorCall(iv, codegen, constructorDescriptor, constructorDelegationCall);
         if (!isSameClassConstructor(delegateConstructor)) {
@@ -1061,7 +1065,7 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
     }
 
     private static void markLineNumberForConstructor(
-            @NotNull ConstructorDescriptor descriptor,
+            @NotNull ClassConstructorDescriptor descriptor,
             @Nullable KtConstructor constructor,
             @NotNull ExpressionCodegen codegen
     ) {
@@ -1195,7 +1199,7 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
     }
 
     private void lookupConstructorExpressionsInClosureIfPresent() {
-        if (state.getClassBuilderMode() != ClassBuilderMode.FULL || descriptor.getConstructors().isEmpty()) return;
+        if (!state.getClassBuilderMode().generateBodies || descriptor.getConstructors().isEmpty()) return;
 
         KtVisitorVoid visitor = new KtVisitorVoid() {
             @Override
@@ -1213,8 +1217,10 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
                 else if (descriptor instanceof CallableMemberDescriptor) {
                     ResolvedCall<? extends CallableDescriptor> call = CallUtilKt.getResolvedCall(expr, bindingContext);
                     if (call != null) {
-                        lookupReceiver(call.getDispatchReceiver());
-                        lookupReceiver(call.getExtensionReceiver());
+                        lookupReceivers(call);
+                    }
+                    if (call instanceof VariableAsFunctionResolvedCall) {
+                        lookupReceivers(((VariableAsFunctionResolvedCall) call).getVariableCall());
                     }
                 }
                 else if (descriptor instanceof VariableDescriptor) {
@@ -1225,6 +1231,11 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
                     }
                     lookupInContext(descriptor);
                 }
+            }
+
+            private void lookupReceivers(@NotNull ResolvedCall<? extends CallableDescriptor> call) {
+                lookupReceiver(call.getDispatchReceiver());
+                lookupReceiver(call.getExtensionReceiver());
             }
 
             private void lookupReceiver(@Nullable ReceiverValue value) {
@@ -1302,13 +1313,21 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
     private void generateTraitMethods() {
         if (isAnnotationOrJvm6Interface(descriptor, state)) return;
 
+        List<FunctionDescriptor> restrictedInheritance = new ArrayList<FunctionDescriptor>();
         for (Map.Entry<FunctionDescriptor, FunctionDescriptor> entry : CodegenUtil.getNonPrivateTraitMethods(descriptor).entrySet()) {
             FunctionDescriptor interfaceFun = entry.getKey();
             //skip java 8 default methods
-            if (!CodegenUtilKt.isDefinitelyNotDefaultImplsMethod(interfaceFun)) {
-                generateDelegationToDefaultImpl(interfaceFun, entry.getValue());
+            if (!CodegenUtilKt.isDefinitelyNotDefaultImplsMethod(interfaceFun) && !isJvm8InterfaceMember(interfaceFun, state)) {
+                if (state.isJvm8Target() && !JvmCodegenUtil.isJvm8Interface(interfaceFun.getContainingDeclaration(), state)) {
+                    restrictedInheritance.add(interfaceFun);
+                }
+                else {
+                    generateDelegationToDefaultImpl(interfaceFun, entry.getValue());
+                }
             }
         }
+
+        CodegenUtilKt.reportTarget6InheritanceErrorIfNeeded(descriptor, myClass, restrictedInheritance, state);
     }
 
     private void generateDelegationToDefaultImpl(@NotNull final FunctionDescriptor traitFun, @NotNull final FunctionDescriptor inheritedFun) {
@@ -1365,7 +1384,7 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
     private void generateDelegatorToConstructorCall(
             @NotNull InstructionAdapter iv,
             @NotNull ExpressionCodegen codegen,
-            @NotNull ConstructorDescriptor constructorDescriptor,
+            @NotNull ClassConstructorDescriptor constructorDescriptor,
             @Nullable ResolvedCall<ConstructorDescriptor> delegationConstructorCall
     ) {
         if (delegationConstructorCall == null) {
@@ -1552,7 +1571,7 @@ public class ImplementationBodyCodegen extends ClassBodyCodegen {
     }
 
     private void initializeEnumConstants(@NotNull List<KtEnumEntry> enumEntries) {
-        if (state.getClassBuilderMode() != ClassBuilderMode.FULL) return;
+        if (!state.getClassBuilderMode().generateBodies) return;
 
         ExpressionCodegen codegen = createOrGetClInitCodegen();
         InstructionAdapter iv = codegen.v;

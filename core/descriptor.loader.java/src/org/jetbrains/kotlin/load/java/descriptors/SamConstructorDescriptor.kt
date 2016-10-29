@@ -18,11 +18,14 @@ package org.jetbrains.kotlin.load.java.descriptors
 
 import org.jetbrains.kotlin.descriptors.CallableMemberDescriptor
 import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
+import org.jetbrains.kotlin.descriptors.SimpleFunctionDescriptor
 import org.jetbrains.kotlin.descriptors.impl.SimpleFunctionDescriptorImpl
 import org.jetbrains.kotlin.descriptors.synthetic.SyntheticMemberDescriptor
 import org.jetbrains.kotlin.resolve.scopes.DescriptorKindExclude
 
-class SamConstructorDescriptor(
+interface SamConstructorDescriptor : SimpleFunctionDescriptor, SyntheticMemberDescriptor<JavaClassDescriptor>
+
+class SamConstructorDescriptorImpl(
         containingDeclaration: DeclarationDescriptor,
         private val samInterface: JavaClassDescriptor
 ) : SimpleFunctionDescriptorImpl(
@@ -32,7 +35,7 @@ class SamConstructorDescriptor(
         samInterface.name,
         CallableMemberDescriptor.Kind.SYNTHESIZED,
         samInterface.source
-), SyntheticMemberDescriptor<JavaClassDescriptor> {
+), SamConstructorDescriptor {
     override val baseDescriptorForSynthetic: JavaClassDescriptor
         get() = samInterface
 }

@@ -108,7 +108,7 @@ class LazyJavaClassDescriptor(
     private val staticScope = LazyJavaStaticClassScope(c, jClass, this)
     override fun getStaticScope(): MemberScope = staticScope
 
-    override fun getUnsubstitutedPrimaryConstructor(): ConstructorDescriptor? = null
+    override fun getUnsubstitutedPrimaryConstructor(): ClassConstructorDescriptor? = null
 
     override fun getCompanionObjectDescriptor(): ClassDescriptor? = null
 
@@ -215,8 +215,6 @@ class LazyJavaClassDescriptor(
 
         override val supertypeLoopChecker: SupertypeLoopChecker
             get() = c.components.supertypeLoopChecker
-
-        override val annotations: Annotations get() = Annotations.EMPTY
 
         override fun isFinal(): Boolean = isFinalClass
 

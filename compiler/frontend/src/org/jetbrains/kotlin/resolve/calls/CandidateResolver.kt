@@ -20,6 +20,7 @@ import com.google.common.collect.Lists
 import com.google.common.collect.Sets
 import org.jetbrains.kotlin.builtins.ReflectionTypes
 import org.jetbrains.kotlin.descriptors.*
+import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptor
 import org.jetbrains.kotlin.descriptors.impl.TypeAliasConstructorDescriptor
 import org.jetbrains.kotlin.diagnostics.Errors
 import org.jetbrains.kotlin.diagnostics.Errors.*
@@ -240,13 +241,13 @@ class CandidateResolver(
         val dispatchReceiver = candidateCall.dispatchReceiver
         if (dispatchReceiver != null) {
             var nestedClass: ClassDescriptor? = null
-            if (candidateDescriptor is ConstructorDescriptor
+            if (candidateDescriptor is ClassConstructorDescriptor
                 && DescriptorUtils.isStaticNestedClass(candidateDescriptor.containingDeclaration)
             ) {
                 nestedClass = candidateDescriptor.containingDeclaration
             }
             else if (candidateDescriptor is FakeCallableDescriptorForObject) {
-                nestedClass = candidateDescriptor.getReferencedDescriptor()
+                nestedClass = candidateDescriptor.getReferencedObject()
             }
             if (nestedClass != null) {
                 tracing.nestedClassAccessViaInstanceReference(trace, nestedClass, candidateCall.explicitReceiverKind)
@@ -285,7 +286,7 @@ class CandidateResolver(
         if (expression is KtSimpleNameExpression) {
             // 'B' in 'class A: B()' is JetConstructorCalleeExpression
             if (descriptor is ConstructorDescriptor) {
-                val modality = descriptor.containingDeclaration.modality
+                val modality = descriptor.constructedClass.modality
                 if (modality == Modality.ABSTRACT) {
                     tracing.instantiationOfAbstractClass(trace)
                 }
@@ -597,15 +598,19 @@ class CandidateResolver(
         private val argumentsMapping = typeAlias.declaredTypeParameters.zip(ktTypeArguments).toMap()
 
         override fun wrongNumberOfTypeArguments(typeAlias: TypeAliasDescriptor, numberOfParameters: Int) {
-            // TODO
+            // can't happen in single-step expansion
         }
 
         override fun conflictingProjection(typeAlias: TypeAliasDescriptor, typeParameter: TypeParameterDescriptor?, substitutedArgument: KotlinType) {
-            // TODO
+            // can't happen in single-step expansion
         }
 
         override fun recursiveTypeAlias(typeAlias: TypeAliasDescriptor) {
-            // can't happen in non-error type
+            // can't happen in single-step expansion
+        }
+
+        override fun repeatedAnnotation(annotation: AnnotationDescriptor) {
+            // can't happen in single-step expansion
         }
 
         override fun boundsViolationInSubstitution(bound: KotlinType, unsubstitutedArgument: KotlinType, argument: KotlinType, typeParameter: TypeParameterDescriptor) {
@@ -630,7 +635,7 @@ class CandidateResolver(
         val substitutedType = typeAliasParametersSubstitutor.substitute(typeAliasConstructorDescriptor.returnType, Variance.INVARIANT)!!
         val boundsSubstitutor = TypeSubstitutor.create(substitutedType)
 
-        val typeAliasDescriptor = typeAliasConstructorDescriptor.typeAliasDescriptor
+        val typeAliasDescriptor = typeAliasConstructorDescriptor.containingDeclaration
 
         val unsubstitutedType = typeAliasDescriptor.expandedType
         if (unsubstitutedType.isError) return

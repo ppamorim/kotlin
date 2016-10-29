@@ -19,7 +19,10 @@ package org.jetbrains.kotlin.idea.decompiler.navigation
 import com.intellij.openapi.project.Project
 import com.intellij.psi.search.EverythingGlobalScope
 import org.jetbrains.kotlin.builtins.DefaultBuiltIns
+import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.descriptors.*
+import org.jetbrains.kotlin.descriptors.impl.TypeAliasConstructorDescriptor
+import org.jetbrains.kotlin.idea.caches.resolve.*
 import org.jetbrains.kotlin.idea.decompiler.KtDecompiledFile
 import org.jetbrains.kotlin.idea.decompiler.textBuilder.DecompiledTextIndexer
 import org.jetbrains.kotlin.idea.stubindex.*
@@ -32,6 +35,8 @@ import org.jetbrains.kotlin.renderer.DescriptorRenderer
 import org.jetbrains.kotlin.renderer.DescriptorRendererModifier
 import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameSafe
+import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameUnsafe
+import org.jetbrains.kotlin.resolve.descriptorUtil.module
 import org.jetbrains.kotlin.resolve.descriptorUtil.resolveTopLevelClass
 import org.jetbrains.kotlin.types.ErrorUtils
 import java.util.*
@@ -46,7 +51,19 @@ fun findDecompiledDeclaration(
 
     val decompiledFiles = findDecompiledFilesForDescriptor(project, referencedDescriptor)
 
+    val referencedModule = referencedDescriptor.module
     return decompiledFiles.asSequence().mapNotNull { file ->
+        val moduleInfo = file.getNullableModuleInfo()
+        val libraryInfo = when (moduleInfo) {
+            is LibraryInfo -> moduleInfo
+            is LibrarySourceInfo -> LibraryInfo(project, moduleInfo.library)
+            else -> null
+        }
+        val libraryModule = libraryInfo?.let { file.getResolutionFacade().findModuleDescriptor(it) }
+        if (libraryModule != null
+            && referencedModule.name != KotlinBuiltIns.BUILTINS_MODULE_NAME
+            && referencedModule.name != libraryModule.name) return@mapNotNull null
+
         ByDescriptorIndexer.getDeclarationForDescriptor(referencedDescriptor, file)
     }.firstOrNull()
 }
@@ -81,6 +98,7 @@ private fun findCandidateDeclarationsInIndex(
     }
 
     val topLevelDeclaration = DescriptorUtils.getParentOfType(referencedDescriptor, PropertyDescriptor::class.java, false)
+                              ?: DescriptorUtils.getParentOfType(referencedDescriptor, TypeAliasConstructorDescriptor::class.java, false)?.typeAliasDescriptor
                               ?: DescriptorUtils.getParentOfType(referencedDescriptor, FunctionDescriptor::class.java, false)
                               ?: DescriptorUtils.getParentOfType(referencedDescriptor, TypeAliasDescriptor::class.java, false)
                               ?: return emptyList()
@@ -109,9 +127,18 @@ object ByDescriptorIndexer : DecompiledTextIndexer<String> {
     internal fun getDeclarationForDescriptor(descriptor: DeclarationDescriptor, file: KtDecompiledFile): KtDeclaration? {
         val original = descriptor.original
 
+        if (original is TypeAliasConstructorDescriptor) {
+            return getDeclarationForDescriptor(original.typeAliasDescriptor, file)
+        }
+
         if (original is ValueParameterDescriptor) {
             val callable = original.containingDeclaration
             val callableDeclaration = getDeclarationForDescriptor(callable, file) as? KtCallableDeclaration ?: return null
+            if (original.index >= callableDeclaration.valueParameters.size) {
+                LOG.error("Parameter count mismatch for ${DescriptorRenderer.DEBUG_TEXT.render(callable)}[${original.index}] vs " +
+                     callableDeclaration.valueParameterList?.text)
+                return null
+            }
             return callableDeclaration.valueParameters[original.index]
         }
 
@@ -124,9 +151,10 @@ object ByDescriptorIndexer : DecompiledTextIndexer<String> {
         return file.getDeclaration(this, original.toStringKey()) ?: run {
             if (descriptor !is ClassDescriptor) return null
 
-            val classFqName = descriptor.fqNameSafe
+            val classFqName = descriptor.fqNameUnsafe
             if (JvmBuiltInsSettings.isSerializableInJava(classFqName)) {
-                val builtInDescriptor = DefaultBuiltIns.Instance.builtInsModule.resolveTopLevelClass(classFqName, NoLookupLocation.FROM_IDE)
+                val builtInDescriptor =
+                        DefaultBuiltIns.Instance.builtInsModule.resolveTopLevelClass(classFqName.toSafe(), NoLookupLocation.FROM_IDE)
                 return builtInDescriptor?.let { file.getDeclaration(this, it.toStringKey()) }
             }
             return null
@@ -142,4 +170,3 @@ object ByDescriptorIndexer : DecompiledTextIndexer<String> {
         withDefinedIn = true
     }
 }
-

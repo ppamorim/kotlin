@@ -32,8 +32,6 @@ import org.jetbrains.kotlin.resolve.ModifiersChecker;
 import org.jetbrains.kotlin.resolve.calls.model.MutableDataFlowInfoForArguments;
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall;
 import org.jetbrains.kotlin.resolve.calls.smartcasts.DataFlowInfo;
-import org.jetbrains.kotlin.resolve.calls.smartcasts.DataFlowValue;
-import org.jetbrains.kotlin.resolve.calls.smartcasts.DataFlowValueFactory;
 import org.jetbrains.kotlin.resolve.descriptorUtil.DescriptorUtilsKt;
 import org.jetbrains.kotlin.resolve.inline.InlineUtil;
 import org.jetbrains.kotlin.resolve.scopes.LexicalScope;
@@ -403,22 +401,19 @@ public class ControlStructureTypingVisitor extends ExpressionTypingVisitor {
         KtParameter loopParameter = expression.getLoopParameter();
         if (loopParameter != null) {
             VariableDescriptor variableDescriptor = createLoopParameterDescriptor(loopParameter, expectedParameterType, context);
-            components.modifiersChecker.withTrace(context.trace).checkModifiersForLocalDeclaration(loopParameter, variableDescriptor);
+            ModifiersChecker.ModifiersCheckingProcedure modifiersCheckingProcedure = components.modifiersChecker.withTrace(context.trace);
+            modifiersCheckingProcedure.checkModifiersForLocalDeclaration(loopParameter, variableDescriptor);
             components.identifierChecker.checkDeclaration(loopParameter, context.trace);
-
             loopScope.addVariableDescriptor(variableDescriptor);
-        }
-        else {
-            KtDestructuringDeclaration multiParameter = expression.getDestructuringParameter();
+            KtDestructuringDeclaration multiParameter = loopParameter.getDestructuringDeclaration();
             if (multiParameter != null) {
                 KotlinType elementType = expectedParameterType == null ? ErrorUtils.createErrorType("Loop range has no type") : expectedParameterType;
                 TransientReceiver iteratorNextAsReceiver = new TransientReceiver(elementType);
-                components.annotationResolver.resolveAnnotationsWithArguments(loopScope, multiParameter.getModifierList(), context.trace);
-                components.destructuringDeclarationResolver.defineLocalVariablesFromMultiDeclaration(
+                components.annotationResolver.resolveAnnotationsWithArguments(loopScope, loopParameter.getModifierList(), context.trace);
+                components.destructuringDeclarationResolver.defineLocalVariablesFromDestructuringDeclaration(
                         loopScope, multiParameter, iteratorNextAsReceiver, loopRange, context
                 );
-                components.modifiersChecker.withTrace(context.trace).checkModifiersForDestructuringDeclaration(multiParameter);
-                components.modifiersChecker.withTrace(context.trace).checkParameterHasNoValOrVar(multiParameter, VAL_OR_VAR_ON_LOOP_MULTI_PARAMETER);
+                modifiersCheckingProcedure.checkModifiersForDestructuringDeclaration(multiParameter);
                 components.identifierChecker.checkDeclaration(multiParameter, context.trace);
             }
         }
@@ -485,7 +480,7 @@ public class ControlStructureTypingVisitor extends ExpressionTypingVisitor {
                 components.identifierChecker.checkDeclaration(catchParameter, context.trace);
                 ModifiersChecker.ModifiersCheckingProcedure modifiersChecking = components.modifiersChecker.withTrace(context.trace);
                 modifiersChecking.checkParameterHasNoValOrVar(catchParameter, VAL_OR_VAR_ON_CATCH_PARAMETER);
-                ModifierCheckerCore.INSTANCE.check(catchParameter, context.trace, null, components.languageFeatureSettings);
+                ModifierCheckerCore.INSTANCE.check(catchParameter, context.trace, null, components.languageVersionSettings);
 
                 VariableDescriptor variableDescriptor = components.descriptorResolver.resolveLocalVariableDescriptor(
                         context.scope, catchParameter, context.trace);

@@ -95,6 +95,12 @@ public class MultiFileJvmBasicCompletionTestGenerated extends AbstractMultiFileJ
         doTest(fileName);
     }
 
+    @TestMetadata("ExactMatchPreferImported")
+    public void testExactMatchPreferImported() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/multifile/ExactMatchPreferImported/");
+        doTest(fileName);
+    }
+
     @TestMetadata("ExcludedClass")
     public void testExcludedClass() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/multifile/ExcludedClass/");
@@ -200,6 +206,12 @@ public class MultiFileJvmBasicCompletionTestGenerated extends AbstractMultiFileJ
     @TestMetadata("KT12124")
     public void testKT12124() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/multifile/KT12124/");
+        doTest(fileName);
+    }
+
+    @TestMetadata("KT9835")
+    public void testKT9835() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/multifile/KT9835/");
         doTest(fileName);
     }
 
@@ -323,6 +335,12 @@ public class MultiFileJvmBasicCompletionTestGenerated extends AbstractMultiFileJ
         doTest(fileName);
     }
 
+    @TestMetadata("ParameterNameAndTypeForNotImportedAlias")
+    public void testParameterNameAndTypeForNotImportedAlias() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/multifile/ParameterNameAndTypeForNotImportedAlias/");
+        doTest(fileName);
+    }
+
     @TestMetadata("ParameterNameAndTypeNestedClasses")
     public void testParameterNameAndTypeNestedClasses() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/multifile/ParameterNameAndTypeNestedClasses/");
@@ -398,6 +416,12 @@ public class MultiFileJvmBasicCompletionTestGenerated extends AbstractMultiFileJ
     @TestMetadata("TopLevelFunction")
     public void testTopLevelFunction() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/multifile/TopLevelFunction/");
+        doTest(fileName);
+    }
+
+    @TestMetadata("TypeAliases")
+    public void testTypeAliases() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/multifile/TypeAliases/");
         doTest(fileName);
     }
 }

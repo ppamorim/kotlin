@@ -161,6 +161,12 @@ public class DiagnosticsTestWithStdLibGenerated extends AbstractDiagnosticsTestW
         doTest(fileName);
     }
 
+    @TestMetadata("shadowingInDestructuring.kt")
+    public void testShadowingInDestructuring() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/diagnostics/testsWithStdLib/shadowingInDestructuring.kt");
+        doTest(fileName);
+    }
+
     @TestMetadata("compiler/testData/diagnostics/testsWithStdLib/annotations")
     @TestDataPath("$PROJECT_ROOT")
     @RunWith(JUnit3RunnerWithInners.class)
@@ -650,6 +656,21 @@ public class DiagnosticsTestWithStdLibGenerated extends AbstractDiagnosticsTestW
         }
     }
 
+    @TestMetadata("compiler/testData/diagnostics/testsWithStdLib/builtins")
+    @TestDataPath("$PROJECT_ROOT")
+    @RunWith(JUnit3RunnerWithInners.class)
+    public static class Builtins extends AbstractDiagnosticsTestWithStdLib {
+        public void testAllFilesPresentInBuiltins() throws Exception {
+            KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/diagnostics/testsWithStdLib/builtins"), Pattern.compile("^(.+)\\.kt$"), true);
+        }
+
+        @TestMetadata("arraysAreCloneable.kt")
+        public void testArraysAreCloneable() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/diagnostics/testsWithStdLib/builtins/arraysAreCloneable.kt");
+            doTest(fileName);
+        }
+    }
+
     @TestMetadata("compiler/testData/diagnostics/testsWithStdLib/cast")
     @TestDataPath("$PROJECT_ROOT")
     @RunWith(JUnit3RunnerWithInners.class)
@@ -1054,6 +1075,12 @@ public class DiagnosticsTestWithStdLibGenerated extends AbstractDiagnosticsTestW
             doTest(fileName);
         }
 
+        @TestMetadata("kt10001.kt")
+        public void testKt10001() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/diagnostics/testsWithStdLib/regression/kt10001.kt");
+            doTest(fileName);
+        }
+
         @TestMetadata("kt2082.kt")
         public void testKt2082() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/diagnostics/testsWithStdLib/regression/kt2082.kt");
@@ -1246,6 +1273,45 @@ public class DiagnosticsTestWithStdLibGenerated extends AbstractDiagnosticsTestW
         @TestMetadata("withChangesToNull.kt")
         public void testWithChangesToNull() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/diagnostics/testsWithStdLib/smartcasts/withChangesToNull.kt");
+            doTest(fileName);
+        }
+    }
+
+    @TestMetadata("compiler/testData/diagnostics/testsWithStdLib/typealias")
+    @TestDataPath("$PROJECT_ROOT")
+    @RunWith(JUnit3RunnerWithInners.class)
+    public static class Typealias extends AbstractDiagnosticsTestWithStdLib {
+        public void testAllFilesPresentInTypealias() throws Exception {
+            KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/diagnostics/testsWithStdLib/typealias"), Pattern.compile("^(.+)\\.kt$"), true);
+        }
+
+        @TestMetadata("exceptionTypeAliases.kt")
+        public void testExceptionTypeAliases() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/diagnostics/testsWithStdLib/typealias/exceptionTypeAliases.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("exceptionTypeAliasesInvisibleWithApiVersion1_0.kt")
+        public void testExceptionTypeAliasesInvisibleWithApiVersion1_0() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/diagnostics/testsWithStdLib/typealias/exceptionTypeAliasesInvisibleWithApiVersion1_0.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("exceptionTypeAliasesInvisibleWithoutFeature.kt")
+        public void testExceptionTypeAliasesInvisibleWithoutFeature() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/diagnostics/testsWithStdLib/typealias/exceptionTypeAliasesInvisibleWithoutFeature.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("typeAliasSamAdapterConstructors.kt")
+        public void testTypeAliasSamAdapterConstructors() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/diagnostics/testsWithStdLib/typealias/typeAliasSamAdapterConstructors.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("typeAliasSamAdapterConstructors2.kt")
+        public void testTypeAliasSamAdapterConstructors2() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/diagnostics/testsWithStdLib/typealias/typeAliasSamAdapterConstructors2.kt");
             doTest(fileName);
         }
     }

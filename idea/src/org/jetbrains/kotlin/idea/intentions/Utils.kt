@@ -22,7 +22,6 @@ import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.descriptors.CallableDescriptor
 import org.jetbrains.kotlin.descriptors.ValueParameterDescriptor
 import org.jetbrains.kotlin.idea.caches.resolve.analyze
-import org.jetbrains.kotlin.idea.caches.resolve.analyzeAndGetResult
 import org.jetbrains.kotlin.idea.core.ShortenReferences
 import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.idea.util.IdeDescriptorRenderers
@@ -32,6 +31,7 @@ import org.jetbrains.kotlin.psi.typeRefHelpers.setReceiverTypeReference
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.calls.callUtil.getResolvedCall
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall
+import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameUnsafe
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.isFlexible
@@ -70,6 +70,11 @@ fun KtContainerNode.description(): String? {
         }
     }
     return null
+}
+
+fun KtCallExpression.isMethodCall(fqMethodName: String): Boolean {
+    val resolvedCall = this.getResolvedCall(this.analyze()) ?: return false
+    return resolvedCall.resultingDescriptor.fqNameUnsafe.asString() == fqMethodName
 }
 
 fun isAutoCreatedItUsage(expression: KtNameReferenceExpression): Boolean {
@@ -158,8 +163,8 @@ private fun KtExpression.specialNegation(): KtExpression? {
             if (operationReference.getReferencedName() == "!") {
                 val baseExpression = baseExpression
                 if (baseExpression != null) {
-                    val context = baseExpression.analyzeAndGetResult().bindingContext
-                    val type = context.getType(baseExpression)
+                    val bindingContext = baseExpression.analyze(BodyResolveMode.PARTIAL)
+                    val type = bindingContext.getType(baseExpression)
                     if (type != null && KotlinBuiltIns.isBoolean(type)) {
                         return KtPsiUtil.safeDeparenthesize(baseExpression)
                     }
@@ -225,5 +230,58 @@ val KtIfExpression.branches: List<KtExpression?> get() = ifBranchesOrThis()
 private fun KtExpression.ifBranchesOrThis(): List<KtExpression?> {
     if (this !is KtIfExpression) return listOf(this)
     return listOf(then) + `else`?.ifBranchesOrThis().orEmpty()
+}
+
+fun ResolvedCall<out CallableDescriptor>.resolvedToArrayType(): Boolean =
+        resultingDescriptor.returnType.let { type ->
+            type != null && (KotlinBuiltIns.isArray(type) || KotlinBuiltIns.isPrimitiveArray(type))
+        }
+
+fun KtElement?.isZero() = this?.text == "0"
+
+fun KtElement?.isOne() = this?.text == "1"
+
+private fun KtExpression.isExpressionOfTypeOrSubtype(predicate: (KotlinType) -> Boolean): Boolean {
+    val returnType = getResolvedCall(analyze())?.resultingDescriptor?.returnType
+    return returnType != null && (returnType.constructor.supertypes + returnType).any(predicate)
+}
+
+fun KtElement?.isSizeOrLength(): Boolean {
+    if (this !is KtDotQualifiedExpression) return false
+
+    return when (selectorExpression?.text) {
+        "size" -> receiverExpression.isExpressionOfTypeOrSubtype { type ->
+            KotlinBuiltIns.isArray(type) ||
+            KotlinBuiltIns.isPrimitiveArray(type) ||
+            KotlinBuiltIns.isCollectionOrNullableCollection(type) ||
+            KotlinBuiltIns.isMapOrNullableMap(type)
+        }
+        "length" -> receiverExpression.isExpressionOfTypeOrSubtype(KotlinBuiltIns::isCharSequenceOrNullableCharSequence)
+        else -> false
+    }
+}
+
+
+fun KtDotQualifiedExpression.getLeftMostReceiverExpression(): KtExpression =
+        (receiverExpression as? KtDotQualifiedExpression)?.getLeftMostReceiverExpression() ?: receiverExpression
+
+fun KtDotQualifiedExpression.replaceFirstReceiver(
+        factory: KtPsiFactory,
+        newReceiver: KtExpression,
+        safeAccess: Boolean = false
+): KtExpression {
+    val receiver = receiverExpression
+    if (safeAccess) {
+        operationTokenNode.psi.replace(factory.createSafeCallNode().psi)
+    }
+    when (receiver) {
+        is KtDotQualifiedExpression -> {
+            receiver.replaceFirstReceiver(factory, newReceiver, safeAccess)
+        }
+        else -> {
+            receiver.replace(newReceiver)
+        }
+    }
+    return this
 }
 

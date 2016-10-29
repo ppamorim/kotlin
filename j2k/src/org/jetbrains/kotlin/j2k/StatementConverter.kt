@@ -110,7 +110,7 @@ class DefaultStatementConverter : JavaElementVisitor(), StatementConverter {
     }
 
     override fun visitExpressionListStatement(statement: PsiExpressionListStatement) {
-        result = ExpressionListStatement(codeConverter.convertExpressions(statement.expressionList.expressions))
+        result = ExpressionListStatement(codeConverter.convertExpressionsInList(statement.expressionList.expressions.asList()))
     }
 
     override fun visitForStatement(statement: PsiForStatement) {
@@ -191,10 +191,7 @@ class DefaultStatementConverter : JavaElementVisitor(), StatementConverter {
             val blockConverted = codeConverter.convertBlock(block)
             val annotations = converter.convertAnnotations(parameter)
             val parameterType = parameter.type
-            val types = if (parameterType is PsiDisjunctionType)
-                parameterType.disjunctions
-            else
-                listOf(parameterType)
+            val types = (parameterType as? PsiDisjunctionType)?.disjunctions ?: listOf(parameterType)
             for (t in types) {
                 val convertedType = codeConverter.typeConverter.convertType(t, Nullability.NotNull)
                 val convertedParameter = FunctionParameter(parameter.declarationIdentifier(),

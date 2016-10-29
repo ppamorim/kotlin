@@ -71,7 +71,7 @@ class PseudocodeImpl(override val correspondingElement: KtElement) : Pseudocode 
 
     private var internalErrorInstruction: SubroutineExitInstruction? = null
 
-    private val errorInstruction: SubroutineExitInstruction
+    override val errorInstruction: SubroutineExitInstruction
         get() = internalErrorInstruction ?: throw AssertionError("Error instruction is read before initialization")
 
     private var postPrecessed = false
@@ -369,11 +369,8 @@ class PseudocodeImpl(override val correspondingElement: KtElement) : Pseudocode 
             startLabel: Label?, finishLabel: Label?,
             labelCountArg: Int): Int {
         var labelCount = labelCountArg
-        val startIndex = if (startLabel != null) startLabel.targetInstructionIndex else 0
-        val finishIndex = if (finishLabel != null)
-            finishLabel.targetInstructionIndex
-        else
-            originalPseudocode.mutableInstructionList.size
+        val startIndex = startLabel?.targetInstructionIndex ?: 0
+        val finishIndex = finishLabel?.targetInstructionIndex ?: originalPseudocode.mutableInstructionList.size
 
         val originalToCopy = Maps.newLinkedHashMap<Label, PseudocodeLabel>()
         val originalLabelsForInstruction = HashMultimap.create<Instruction, Label>()

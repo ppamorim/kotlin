@@ -20,15 +20,12 @@ public class CommonConfigurationKeys {
     private CommonConfigurationKeys() {
     }
 
-    public static final CompilerConfigurationKey<LanguageFeatureSettings> LANGUAGE_FEATURE_SETTINGS =
-            CompilerConfigurationKey.create("language feature settings");
+    public static final CompilerConfigurationKey<LanguageVersionSettings> LANGUAGE_VERSION_SETTINGS =
+            CompilerConfigurationKey.create("language version settings");
 
     public static final CompilerConfigurationKey<Boolean> DISABLE_INLINE =
             CompilerConfigurationKey.create("disable inline");
 
     public static final CompilerConfigurationKey<String> MODULE_NAME =
             CompilerConfigurationKey.create("module name");
-
-    public static final CompilerConfigurationKey<Boolean> REPL_MODE =
-            CompilerConfigurationKey.create("REPL mode");
 }

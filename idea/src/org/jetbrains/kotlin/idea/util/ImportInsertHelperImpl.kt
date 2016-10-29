@@ -25,8 +25,8 @@ import org.jetbrains.kotlin.idea.core.targetDescriptors
 import org.jetbrains.kotlin.idea.imports.ImportPathComparator
 import org.jetbrains.kotlin.idea.imports.getImportableTargets
 import org.jetbrains.kotlin.idea.imports.importableFqName
-import org.jetbrains.kotlin.idea.project.platform
 import org.jetbrains.kotlin.idea.refactoring.fqName.isImported
+import org.jetbrains.kotlin.idea.resolve.frontendService
 import org.jetbrains.kotlin.idea.util.ImportDescriptorResult
 import org.jetbrains.kotlin.idea.util.ImportInsertHelper
 import org.jetbrains.kotlin.idea.util.getFileResolutionScope
@@ -37,6 +37,7 @@ import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.ImportPath
 import org.jetbrains.kotlin.resolve.descriptorUtil.getImportableDescriptor
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
+import org.jetbrains.kotlin.resolve.lazy.DefaultImportProvider
 import org.jetbrains.kotlin.resolve.scopes.DescriptorKindFilter
 import org.jetbrains.kotlin.resolve.scopes.LexicalScope
 import org.jetbrains.kotlin.resolve.scopes.MemberScope
@@ -57,8 +58,8 @@ class ImportInsertHelperImpl(private val project: Project) : ImportInsertHelper(
         get() = ImportPathComparator
 
     override fun isImportedWithDefault(importPath: ImportPath, contextFile: KtFile): Boolean {
-        val moduleParameters = contextFile.platform.defaultModuleParameters
-        return importPath.isImported(moduleParameters.defaultImports, moduleParameters.excludedImports)
+        val defaultImportProvider = contextFile.getResolutionFacade().frontendService<DefaultImportProvider>()
+        return importPath.isImported(defaultImportProvider.defaultImports, defaultImportProvider.excludedImports)
     }
 
     override fun mayImportOnShortenReferences(descriptor: DeclarationDescriptor): Boolean {

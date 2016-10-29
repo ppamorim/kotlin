@@ -100,6 +100,8 @@ abstract class AbstractRenameTest : KotlinMultiFileTestCase() {
             ConfigLibraryUtil.configureKotlinRuntimeAndSdk(myModule, PluginTestCaseBase.mockJdk())
         }
 
+        isMultiModule = renameObject["isMultiModule"]?.asBoolean ?: false
+
         val libraryInfos = renameObject.getAsJsonArray("libraries")?.map { it.asString!! } ?: emptyList()
         ConfigLibraryUtil.configureLibraries(myModule, PlatformTestUtil.getCommunityPath(), libraryInfos)
 
@@ -281,7 +283,7 @@ abstract class AbstractRenameTest : KotlinMultiFileTestCase() {
         val newName = renameParamsObject.getString("newName")
 
         doTestCommittingDocuments { rootDir, rootAfter ->
-            val mainFile = rootDir.findChild(file)!!
+            val mainFile = rootDir.findFileByRelativePath(file)!!
             val psiFile = PsiManager.getInstance(context.project).findFile(mainFile)
 
             runRenameProcessor(context, newName, psiFile, renameParamsObject, true, true)
@@ -370,9 +372,10 @@ abstract class AbstractRenameTest : KotlinMultiFileTestCase() {
             isSearchInComments: Boolean,
             isSearchTextOccurrences: Boolean
     ) {
+        if (substitution == null) return
         val renameProcessor = RenameProcessor(context.project, substitution, newName, isSearchInComments, isSearchTextOccurrences)
         if (renameParamsObject["overloadRenamer.onlyPrimaryElement"]?.asBoolean ?: false) {
-            with(AutomaticOverloadsRenamer) { substitution?.elementFilter = { false } }
+            with(AutomaticOverloadsRenamer) { substitution.elementFilter = { false } }
         }
         Extensions.getExtensions(AutomaticRenamerFactory.EP_NAME).forEach { renameProcessor.addRenamerFactory(it) }
         renameProcessor.run()

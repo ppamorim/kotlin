@@ -1,5 +1,5 @@
-// TODO enable for JS backend too when KT-7819 will be fixed
-// TARGET_BACKEND: JVM
+// TODO enable for JS backend too when KT-14549 will be fixed
+// IGNORE_BACKEND: JS
 
 inline fun run(block: () -> Unit) = block()
 

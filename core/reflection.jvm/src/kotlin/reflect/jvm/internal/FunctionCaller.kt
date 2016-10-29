@@ -23,26 +23,29 @@ import java.lang.reflect.Constructor as ReflectConstructor
 import java.lang.reflect.Field as ReflectField
 import java.lang.reflect.Method as ReflectMethod
 
-internal abstract class FunctionCaller<out M : Member>(
+internal abstract class FunctionCaller<out M : Member?>(
         internal val member: M,
         internal val returnType: Type,
         internal val instanceClass: Class<*>?,
         valueParameterTypes: Array<Type>
 ) {
-    internal val parameterTypes: List<Type> =
+    val parameterTypes: List<Type> =
             instanceClass?.let { listOf(it, *valueParameterTypes) } ?:
             valueParameterTypes.toList()
+
+    val arity: Int
+        get() = parameterTypes.size
 
     abstract fun call(args: Array<*>): Any?
 
     protected open fun checkArguments(args: Array<*>) {
-        if (parameterTypes.size != args.size) {
-            throw IllegalArgumentException("Callable expects ${parameterTypes.size} arguments, but ${args.size} were provided.")
+        if (arity != args.size) {
+            throw IllegalArgumentException("Callable expects $arity arguments, but ${args.size} were provided.")
         }
     }
 
     protected fun checkObjectInstance(obj: Any?) {
-        if (obj == null || !member.declaringClass.isInstance(obj)) {
+        if (obj == null || !member!!.declaringClass.isInstance(obj)) {
             throw IllegalArgumentException("An object member requires the object instance passed as the first argument.")
         }
     }

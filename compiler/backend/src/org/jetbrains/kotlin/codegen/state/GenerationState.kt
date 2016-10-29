@@ -20,6 +20,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.ModificationTracker
 import com.intellij.psi.PsiElement
 import org.jetbrains.kotlin.builtins.ReflectionTypes
+import org.jetbrains.kotlin.backend.jvm.JvmIrCodegenFactory
 import org.jetbrains.kotlin.codegen.*
 import org.jetbrains.kotlin.codegen.`when`.MappingsClassesForWhenByEnum
 import org.jetbrains.kotlin.codegen.binding.CodegenBinding
@@ -46,6 +47,7 @@ import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtScript
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.BindingTrace
+import org.jetbrains.kotlin.resolve.BindingTraceFilter
 import org.jetbrains.kotlin.resolve.DelegatingBindingTrace
 import org.jetbrains.kotlin.resolve.diagnostics.Diagnostics
 import org.jetbrains.kotlin.resolve.jvm.JvmClassName
@@ -67,7 +69,9 @@ class GenerationState @JvmOverloads constructor(
         // partial compilation. Module chunks are treated as a single module.
         // TODO: get rid of it with the proper module infrastructure
         val outDirectory: File? = null,
-        private val onIndependentPartCompilationEnd: GenerationStateEventCallback = GenerationStateEventCallback.DO_NOTHING
+        private val onIndependentPartCompilationEnd: GenerationStateEventCallback = GenerationStateEventCallback.DO_NOTHING,
+        val codegenFactory: CodegenFactory = if (configuration.getBoolean(JVMConfigurationKeys.IR)) JvmIrCodegenFactory else DefaultCodegenFactory,
+        wantsDiagnostics: Boolean = true
 ) {
     abstract class GenerateClassFilter {
         abstract fun shouldAnnotateClass(processingClassOrObject: KtClassOrObject): Boolean
@@ -114,7 +118,7 @@ class GenerationState @JvmOverloads constructor(
         }
     }
 
-    val extraJvmDiagnosticsTrace: BindingTrace = DelegatingBindingTrace(bindingContext, false, "For extra diagnostics in ${this.javaClass}")
+    val extraJvmDiagnosticsTrace: BindingTrace = DelegatingBindingTrace(bindingContext, "For extra diagnostics in ${this.javaClass}", false)
     private val interceptedBuilderFactory: ClassBuilderFactory
     private var used = false
 
@@ -124,13 +128,17 @@ class GenerationState @JvmOverloads constructor(
         extraJvmDiagnosticsTrace.bindingContext.diagnostics
     }
 
+    val isJvm8Target: Boolean = configuration.get(JVMConfigurationKeys.JVM_TARGET) == JvmTarget.JVM_1_8
+    val generateDefaultImplsForJvm8: Boolean = configuration.getBoolean(JVMConfigurationKeys.INTERFACE_COMPATIBILITY)
+
     val moduleName: String = moduleName ?: JvmCodegenUtil.getModuleName(module)
     val classBuilderMode: ClassBuilderMode = builderFactory.classBuilderMode
-    val bindingTrace: BindingTrace = DelegatingBindingTrace(bindingContext, "trace in GenerationState")
+    val bindingTrace: BindingTrace = DelegatingBindingTrace(bindingContext, "trace in GenerationState",
+                                                            filter = if (wantsDiagnostics) BindingTraceFilter.ACCEPT_ALL else BindingTraceFilter.NO_DIAGNOSTICS)
     val bindingContext: BindingContext = bindingTrace.bindingContext
     val typeMapper: KotlinTypeMapper = KotlinTypeMapper(
-            this.bindingContext, classBuilderMode, fileClassesProvider, incrementalCacheForThisTarget,
-            IncompatibleClassTrackerImpl(extraJvmDiagnosticsTrace), this.moduleName
+            this.bindingContext, classBuilderMode, fileClassesProvider, IncompatibleClassTrackerImpl(extraJvmDiagnosticsTrace),
+            this.moduleName, isJvm8Target
     )
     val intrinsics: IntrinsicMethods = IntrinsicMethods()
     val samWrapperClasses: SamWrapperClasses = SamWrapperClasses(this)
@@ -156,7 +164,6 @@ class GenerationState @JvmOverloads constructor(
     val isInlineDisabled: Boolean = configuration.getBoolean(CommonConfigurationKeys.DISABLE_INLINE)
     val useTypeTableInSerializer: Boolean = configuration.getBoolean(JVMConfigurationKeys.USE_TYPE_TABLE)
     val inheritMultifileParts: Boolean = configuration.getBoolean(JVMConfigurationKeys.INHERIT_MULTIFILE_PARTS)
-    val isJvm8Target: Boolean = configuration.get(JVMConfigurationKeys.JVM_TARGET) == JvmTarget.JVM_1_8
 
     val rootContext: CodegenContext<*> = RootContext(this)
 
@@ -168,7 +175,7 @@ class GenerationState @JvmOverloads constructor(
                     { OptimizationClassBuilderFactory(it, configuration.get(JVMConfigurationKeys.DISABLE_OPTIMIZATION, false)) },
                     ::CoroutineTransformerClassBuilderFactory,
                     { BuilderFactoryForDuplicateSignatureDiagnostics(
-                            it, this.bindingContext, diagnostics, fileClassesProvider, incrementalCacheForThisTarget, this.moduleName
+                            it, this.bindingContext, diagnostics, fileClassesProvider, this.moduleName
                       ).apply { duplicateSignatureFactory = this } },
                     { BuilderFactoryForDuplicateClassNameDiagnostics(it, diagnostics) },
                     { configuration.get(JVMConfigurationKeys.DECLARATIONS_JSON_PATH)

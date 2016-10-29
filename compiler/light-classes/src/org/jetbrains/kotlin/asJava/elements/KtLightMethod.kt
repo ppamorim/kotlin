@@ -17,10 +17,12 @@
 package org.jetbrains.kotlin.asJava.elements
 
 import com.intellij.core.JavaCoreBundle
+import com.intellij.navigation.ItemPresentation
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.*
 import com.intellij.psi.impl.compiled.ClsTypeElementImpl
 import com.intellij.psi.impl.light.LightMethod
+import com.intellij.psi.impl.light.LightModifierList
 import com.intellij.psi.scope.PsiScopeProcessor
 import com.intellij.psi.util.*
 import com.intellij.util.IncorrectOperationException
@@ -33,6 +35,7 @@ import org.jetbrains.kotlin.asJava.unwrapped
 import org.jetbrains.kotlin.idea.KotlinLanguage
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.resolve.DescriptorUtils
+import org.jetbrains.kotlin.resolve.jvm.KotlinJavaPsiFacade
 import org.jetbrains.kotlin.resolve.jvm.diagnostics.JvmDeclarationOriginKind
 
 interface KtLightMethod : PsiMethod, KtLightDeclaration<KtDeclaration, PsiMethod> {
@@ -52,6 +55,8 @@ sealed class KtLightMethodImpl(
         val delegateTypeElement = clsDelegate.returnTypeElement as? ClsTypeElementImpl
         delegateTypeElement?.let { ClsTypeElementImpl(this, it.canonicalText, /*ClsTypeElementImpl.VARIANCE_NONE */ 0.toChar()) }
     }
+
+    private val calculatingReturnType = ThreadLocal<Boolean>()
 
     override fun getContainingClass(): KtLightClass = super.getContainingClass() as KtLightClass
 
@@ -88,6 +93,7 @@ sealed class KtLightMethodImpl(
     }
 
     override fun getNavigationElement(): PsiElement = kotlinOrigin?.navigationElement ?: super.getNavigationElement()
+    override fun getPresentation(): ItemPresentation? = kotlinOrigin?.presentation ?: super.getPresentation()
     override fun getParent(): PsiElement? = containingClass
     override fun getText() = kotlinOrigin?.text ?: ""
     override fun getTextRange() = kotlinOrigin?.textRange ?: TextRange.EMPTY_RANGE
@@ -141,7 +147,12 @@ sealed class KtLightMethodImpl(
         else clsDelegate.modifierList
     }
 
-    override fun getModifierList() = _modifierList
+    override fun getModifierList(): PsiModifierList {
+        if (calculatingReturnType.get() == true) {
+            return KotlinJavaPsiFacade.getInstance(project).emptyModifierList
+        }
+        return _modifierList
+    }
 
     override fun getNameIdentifier() = lightIdentifier
 
@@ -206,7 +217,15 @@ sealed class KtLightMethodImpl(
     // which is relied upon by java type inference
     override fun getReturnTypeElement(): PsiTypeElement? = returnTypeElem
 
-    override fun getReturnType() = returnTypeElement?.type
+    override fun getReturnType(): PsiType? {
+        calculatingReturnType.set(true)
+        try {
+            return returnTypeElement?.type
+        }
+        finally {
+            calculatingReturnType.set(false)
+        }
+    }
 
     companion object Factory {
         fun create(

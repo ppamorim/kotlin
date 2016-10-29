@@ -18,6 +18,8 @@ package org.jetbrains.kotlin.java.model.internal
 
 import com.intellij.psi.*
 import com.intellij.psi.PsiModifier.*
+import com.intellij.psi.impl.PsiSubstitutorImpl
+import com.intellij.psi.util.PsiTypesUtil
 import org.jetbrains.kotlin.asJava.elements.KtLightAnnotation
 import javax.lang.model.element.Modifier
 
@@ -52,7 +54,7 @@ private fun PsiModifierList.getJavaModifiers(): Set<Modifier> {
 internal fun PsiExpression.calcConstantValue(evaluator: PsiConstantEvaluationHelper? = null): Any? {
     return when (this) {
         is PsiLiteral -> value
-        is KtLightAnnotation.LightExpressionValue<*> -> getConstantValue()
+        is KtLightAnnotation.LightExpressionValue<*> -> getConstantValue() ?: delegate.calcConstantValue(evaluator)
         is PsiExpression -> (evaluator ?: getConstantEvaluator(this)).computeConstantExpression(this)
         else -> null
     }
@@ -89,6 +91,13 @@ fun PsiModifierListOwner.getAnnotationsWithInherited(): List<PsiAnnotation> {
     }
 
     return annotations
+}
+
+fun PsiClass.getTypeWithTypeParameters(): PsiClassType {
+    val elementFactory = JavaPsiFacade.getElementFactory(project)
+    val params = mutableMapOf<PsiTypeParameter, PsiType>()
+    typeParameters.forEach { params.put(it, PsiTypesUtil.getClassType(it)) }
+    return elementFactory.createType(this, PsiSubstitutorImpl.createSubstitutor(params))
 }
 
 private fun PsiAnnotation.isInherited(): Boolean {

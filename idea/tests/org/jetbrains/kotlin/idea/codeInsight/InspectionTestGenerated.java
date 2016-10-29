@@ -67,6 +67,12 @@ public class InspectionTestGenerated extends AbstractInspectionTest {
             doTest(fileName);
         }
 
+        @TestMetadata("destructuringInLambda/inspectionData/inspections.test")
+        public void testDestructuringInLambda_inspectionData_Inspections_test() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/intentions/destructuringInLambda/inspectionData/inspections.test");
+            doTest(fileName);
+        }
+
         @TestMetadata("iterationOverMap/inspectionData/inspections.test")
         public void testIterationOverMap_inspectionData_Inspections_test() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("idea/testData/intentions/iterationOverMap/inspectionData/inspections.test");
@@ -151,6 +157,18 @@ public class InspectionTestGenerated extends AbstractInspectionTest {
         @TestMetadata("convertLambdaToReference/inspectionData/inspections.test")
         public void testConvertLambdaToReference_inspectionData_Inspections_test() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("idea/testData/inspections/convertLambdaToReference/inspectionData/inspections.test");
+            doTest(fileName);
+        }
+
+        @TestMetadata("convertSecondaryToPrimary/inspectionData/inspections.test")
+        public void testConvertSecondaryToPrimary_inspectionData_Inspections_test() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/inspections/convertSecondaryToPrimary/inspectionData/inspections.test");
+            doTest(fileName);
+        }
+
+        @TestMetadata("dynamic/js/inspectionData/inspections.test")
+        public void testDynamic_js_inspectionData_Inspections_test() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/inspections/dynamic/js/inspectionData/inspections.test");
             doTest(fileName);
         }
 

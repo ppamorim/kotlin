@@ -283,8 +283,6 @@ public class InlineCodegen extends CallGenerator {
             @NotNull final GenerationState state,
             @NotNull Method asmMethod
     ) {
-        KotlinTypeMapper typeMapper = state.getTypeMapper();
-
         if (isBuiltInArrayIntrinsic(callableDescriptor)) {
             ClassId classId = IntrinsicArrayConstructorsKt.getClassId();
             byte[] bytes = InlineCacheKt.getOrPut(state.getInlineCache().getClassBytes(), classId, new Function0<byte[]>() {
@@ -300,7 +298,7 @@ public class InlineCodegen extends CallGenerator {
         assert callableDescriptor instanceof DeserializedCallableMemberDescriptor : "Not a deserialized function or proper: " + callableDescriptor;
 
         KotlinTypeMapper.ContainingClassesInfo containingClasses =
-                typeMapper.getContainingClassesForDeserializedCallable((DeserializedCallableMemberDescriptor) callableDescriptor);
+                KotlinTypeMapper.getContainingClassesForDeserializedCallable((DeserializedCallableMemberDescriptor) callableDescriptor);
 
         final ClassId containerId = containingClasses.getImplClassId();
 
@@ -570,6 +568,9 @@ public class InlineCodegen extends CallGenerator {
                         null
                 );
             }
+        }
+        else if (expression instanceof KtFunctionLiteral) {
+            strategy = new ClosureGenerationStrategy(state, (KtDeclarationWithBody) expression);
         }
         else {
             strategy = new FunctionGenerationStrategy.FunctionDefault(state, (KtDeclarationWithBody) expression);

@@ -97,6 +97,24 @@ public class JvmBasicCompletionTestGenerated extends AbstractJvmBasicCompletionT
             doTest(fileName);
         }
 
+        @TestMetadata("ComponentFunction.kt")
+        public void testComponentFunction() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/common/ComponentFunction.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("DataClassMembers.kt")
+        public void testDataClassMembers() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/common/DataClassMembers.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("DataClassMembers2.kt")
+        public void testDataClassMembers2() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/common/DataClassMembers2.kt");
+            doTest(fileName);
+        }
+
         @TestMetadata("ExtendClassName.kt")
         public void testExtendClassName() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/common/ExtendClassName.kt");
@@ -472,6 +490,18 @@ public class JvmBasicCompletionTestGenerated extends AbstractJvmBasicCompletionT
         @TestMetadata("KT12033.kt")
         public void testKT12033() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/common/KT12033.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("KT13780.kt")
+        public void testKT13780() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/common/KT13780.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("KT13780_1.kt")
+        public void testKT13780_1() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/common/KT13780_1.kt");
             doTest(fileName);
         }
 
@@ -1164,6 +1194,12 @@ public class JvmBasicCompletionTestGenerated extends AbstractJvmBasicCompletionT
             @TestMetadata("InExtensionForNullable.kt")
             public void testInExtensionForNullable() throws Exception {
                 String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/common/boldOrGrayed/InExtensionForNullable.kt");
+                doTest(fileName);
+            }
+
+            @TestMetadata("KT9835.kt")
+            public void testKT9835() throws Exception {
+                String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/common/boldOrGrayed/KT9835.kt");
                 doTest(fileName);
             }
 
@@ -2758,6 +2794,12 @@ public class JvmBasicCompletionTestGenerated extends AbstractJvmBasicCompletionT
         @TestMetadata("SAMAdaptersStatic.kt")
         public void testSAMAdaptersStatic() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/java/SAMAdaptersStatic.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("StandardKotlinTypeAliasAfterExplicitlyImported.kt")
+        public void testStandardKotlinTypeAliasAfterExplicitlyImported() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/idea-completion/testData/basic/java/StandardKotlinTypeAliasAfterExplicitlyImported.kt");
             doTest(fileName);
         }
 

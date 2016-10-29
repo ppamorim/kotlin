@@ -194,11 +194,12 @@ abstract class KotlinDebuggerTestBase : KotlinDebuggerTestCase() {
         }
         else {
             try {
-                dp.managerThread!!.schedule(dp.createStepIntoCommand(this, ignoreFilters, filters.get(chooseFromList - 1)))
+                dp.managerThread!!.schedule(dp.createStepIntoCommand(this, ignoreFilters, filters[chooseFromList - 1]))
             }
             catch(e: IndexOutOfBoundsException) {
                 throw AssertionError("Couldn't find smart step into command at: \n" +
-                                     runReadAction { debuggerContext.sourcePosition.elementAt.getElementTextWithContext() })
+                                     runReadAction { debuggerContext.sourcePosition.elementAt.getElementTextWithContext() },
+                                     e)
             }
         }
     }
@@ -377,7 +378,7 @@ abstract class KotlinDebuggerTestBase : KotlinDebuggerTestCase() {
 
     private inline fun <reified T> findBreakpointType(javaClass: Class<T>): T {
         val kotlinFieldBreakpointTypeClass = javaClass as Class<out XBreakpointType<XBreakpoint<XBreakpointProperties<*>>, XBreakpointProperties<*>>>
-        return XDebuggerUtil.getInstance().findBreakpointType<XBreakpoint<XBreakpointProperties<*>>>(kotlinFieldBreakpointTypeClass) as T
+        return XDebuggerUtil.getInstance().findBreakpointType(kotlinFieldBreakpointTypeClass) as T
     }
 
     protected fun createAdditionalBreakpoints(fileText: String) {

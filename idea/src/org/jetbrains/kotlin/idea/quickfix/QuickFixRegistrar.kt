@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 JetBrains s.r.o.
+ * Copyright 2010-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -104,7 +104,8 @@ class QuickFixRegistrar : QuickFixContributor {
 
         val removeRedundantModifierFactory = RemoveModifierFix.createRemoveModifierFactory(true)
         REDUNDANT_MODIFIER.registerFactory(removeRedundantModifierFactory)
-        REDUNDANT_OPEN_IN_INTERFACE.registerFactory(removeRedundantModifierFactory)
+        REDUNDANT_OPEN_IN_INTERFACE.registerFactory(RemoveModifierFix.createRemoveModifierFromListOwnerFactory(OPEN_KEYWORD))
+        UNNECESSARY_LATEINIT.registerFactory(RemoveModifierFix.createRemoveModifierFromListOwnerFactory(LATEINIT_KEYWORD))
 
         REDUNDANT_PROJECTION.registerFactory(RemoveModifierFix.createRemoveProjectionFactory(true))
         INCOMPATIBLE_MODIFIERS.registerFactory(RemoveModifierFix.createRemoveModifierFactory(false))
@@ -132,6 +133,12 @@ class QuickFixRegistrar : QuickFixContributor {
 
         UNRESOLVED_REFERENCE.registerFactory(ImportMemberFix)
         UNRESOLVED_REFERENCE.registerFactory(ImportFix)
+
+        TOO_MANY_ARGUMENTS.registerFactory(ImportForMismatchingArgumentsFix)
+        NO_VALUE_FOR_PARAMETER.registerFactory(ImportForMismatchingArgumentsFix)
+        TYPE_MISMATCH.registerFactory(ImportForMismatchingArgumentsFix)
+        CONSTANT_EXPECTED_TYPE_MISMATCH.registerFactory(ImportForMismatchingArgumentsFix)
+        NAMED_PARAMETER_NOT_FOUND.registerFactory(ImportForMismatchingArgumentsFix)
 
         UNRESOLVED_REFERENCE.registerFactory(AddTestLibQuickFix)
 
@@ -176,19 +183,22 @@ class QuickFixRegistrar : QuickFixContributor {
 
         VAL_WITH_SETTER.registerFactory(ChangeVariableMutabilityFix.VAL_WITH_SETTER_FACTORY)
         VAL_REASSIGNMENT.registerFactory(ChangeVariableMutabilityFix.VAL_REASSIGNMENT_FACTORY)
+        VAL_REASSIGNMENT.registerFactory(LiftAssignmentOutOfTryFix)
         CAPTURED_VAL_INITIALIZATION.registerFactory(ChangeVariableMutabilityFix.CAPTURED_VAL_INITIALIZATION_FACTORY)
         VAR_OVERRIDDEN_BY_VAL.registerFactory(ChangeVariableMutabilityFix.VAR_OVERRIDDEN_BY_VAL_FACTORY)
         VAR_ANNOTATION_PARAMETER.registerFactory(ChangeVariableMutabilityFix.VAR_ANNOTATION_PARAMETER_FACTORY)
 
         VAL_OR_VAR_ON_FUN_PARAMETER.registerFactory(RemoveValVarFromParameterFix)
         VAL_OR_VAR_ON_LOOP_PARAMETER.registerFactory(RemoveValVarFromParameterFix)
-        VAL_OR_VAR_ON_LOOP_MULTI_PARAMETER.registerFactory(RemoveValVarFromParameterFix)
         VAL_OR_VAR_ON_CATCH_PARAMETER.registerFactory(RemoveValVarFromParameterFix)
         VAL_OR_VAR_ON_SECONDARY_CONSTRUCTOR_PARAMETER.registerFactory(RemoveValVarFromParameterFix)
 
         VIRTUAL_MEMBER_HIDDEN.registerFactory(AddOverrideToEqualsHashCodeToStringActionFactory)
 
         UNUSED_VARIABLE.registerFactory(RemovePsiElementSimpleFix.RemoveVariableFactory)
+        UNUSED_VARIABLE.registerFactory(RenameToUnderscoreFix.Factory)
+
+        UNUSED_DESTRUCTURED_PARAMETER_ENTRY.registerFactory(RenameToUnderscoreFix.Factory)
 
         SENSELESS_COMPARISON.registerFactory(SimplifyComparisonFix)
 
@@ -266,6 +276,7 @@ class QuickFixRegistrar : QuickFixContributor {
         TOO_MANY_ARGUMENTS.registerFactory(ChangeFunctionSignatureFix)
         NO_VALUE_FOR_PARAMETER.registerFactory(ChangeFunctionSignatureFix)
         UNUSED_PARAMETER.registerFactory(RemoveUnusedFunctionParameterFix)
+        UNUSED_PARAMETER.registerFactory(RenameToUnderscoreFix.Factory)
         EXPECTED_PARAMETERS_NUMBER_MISMATCH.registerFactory(ChangeFunctionLiteralSignatureFix)
 
         EXPECTED_PARAMETER_TYPE_MISMATCH.registerFactory(ChangeTypeFix)
@@ -418,5 +429,17 @@ class QuickFixRegistrar : QuickFixContributor {
         UNRESOLVED_REFERENCE.registerFactory(CreateTypeParameterByRefActionFactory)
 
         FINAL_UPPER_BOUND.registerFactory(InlineTypeParameterFix)
+        FINAL_UPPER_BOUND.registerFactory(RemoveFinalUpperBoundFix)
+
+        TYPE_PARAMETER_AS_REIFIED.registerFactory(AddReifiedToTypeParameterOfFunctionFix)
+
+        TOO_MANY_CHARACTERS_IN_CHARACTER_LITERAL.registerFactory(TooLongCharLiteralToStringFix)
+
+        UNUSED_VALUE.registerFactory(RemoveUnusedValueFix)
+
+        ANNOTATIONS_ON_BLOCK_LEVEL_EXPRESSION_ON_THE_SAME_LINE.registerFactory(AddNewLineAfterAnnotationsFix)
+
+        INAPPLICABLE_LATEINIT_MODIFIER.registerFactory(ChangeVariableMutabilityFix.LATEINIT_VAL_FACTORY)
+        INAPPLICABLE_LATEINIT_MODIFIER.registerFactory(RemoveNullableFix.LATEINIT_FACTORY)
     }
 }

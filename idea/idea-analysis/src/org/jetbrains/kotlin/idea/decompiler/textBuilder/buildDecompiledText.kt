@@ -24,8 +24,8 @@ import org.jetbrains.kotlin.renderer.DescriptorRenderer
 import org.jetbrains.kotlin.renderer.DescriptorRendererModifier
 import org.jetbrains.kotlin.renderer.DescriptorRendererOptions
 import org.jetbrains.kotlin.renderer.ExcludedTypeAnnotations
+import org.jetbrains.kotlin.resolve.DataClassDescriptorResolver
 import org.jetbrains.kotlin.resolve.DescriptorUtils.isEnumEntry
-import org.jetbrains.kotlin.resolve.dataClassUtils.isComponentLike
 import org.jetbrains.kotlin.resolve.descriptorUtil.secondaryConstructors
 import org.jetbrains.kotlin.types.isFlexible
 
@@ -40,6 +40,7 @@ fun DescriptorRendererOptions.defaultDecompilerRendererOptions() {
     modifiers = DescriptorRendererModifier.ALL
     excludedTypeAnnotationClasses = ExcludedTypeAnnotations.annotationsForNullabilityAndMutability
     alwaysRenderModifiers = true
+    parameterNamesInFunctionalTypes = false // to support parameters names in decompiled text we need to load annotation arguments
 }
 
 fun buildDecompiledText(
@@ -139,7 +140,7 @@ fun buildDecompiledText(
                 if (member is CallableMemberDescriptor
                     && member.kind != CallableMemberDescriptor.Kind.DECLARATION
                     //TODO: not synthesized and component like
-                    && !isComponentLike(member.name)) {
+                    && !DataClassDescriptorResolver.isComponentLike(member.name)) {
                     continue
                 }
                 newlineExceptFirst()

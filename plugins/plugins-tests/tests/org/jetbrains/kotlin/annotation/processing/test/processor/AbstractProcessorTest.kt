@@ -16,15 +16,21 @@
 
 package org.jetbrains.kotlin.annotation.processing.test.processor
 
+import com.intellij.openapi.extensions.Extensions
+import com.intellij.testFramework.registerServiceInstance
 import org.jetbrains.kotlin.annotation.AbstractAnnotationProcessingExtension
+import org.jetbrains.kotlin.annotation.processing.diagnostic.DefaultErrorMessagesAnnotationProcessing
 import org.jetbrains.kotlin.cli.jvm.compiler.EnvironmentConfigFiles
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
 import org.jetbrains.kotlin.codegen.AbstractBytecodeTextTest
 import org.jetbrains.kotlin.codegen.CodegenTestUtil
-import org.jetbrains.kotlin.java.model.JeName
+import org.jetbrains.kotlin.diagnostics.rendering.DefaultErrorMessages
+import org.jetbrains.kotlin.incremental.SourceRetentionAnnotationHandlerImpl
 import org.jetbrains.kotlin.java.model.elements.JeAnnotationMirror
 import org.jetbrains.kotlin.java.model.elements.JeMethodExecutableElement
 import org.jetbrains.kotlin.java.model.elements.JeTypeElement
+import org.jetbrains.kotlin.java.model.elements.JeVariableElement
+import org.jetbrains.kotlin.java.model.internal.JeElementRegistry
 import org.jetbrains.kotlin.resolve.jvm.extensions.AnalysisCompletedHandlerExtension
 import org.jetbrains.kotlin.test.ConfigurationKind
 import org.jetbrains.kotlin.test.KotlinTestUtils
@@ -40,11 +46,19 @@ import javax.lang.model.element.*
 
 class AnnotationProcessingExtensionForTests(
         val processors: List<Processor>
-) : AbstractAnnotationProcessingExtension(createTempDir(), createTempDir(), listOf(), true) {
+) : AbstractAnnotationProcessingExtension(createTempDir(), createTempDir(), listOf(), true,
+                                          createIncrementalDataFile(), SourceRetentionAnnotationHandlerImpl()) {
     override fun loadAnnotationProcessors() = processors
-    
+
+    override val options: Map<String, String>
+        get() = emptyMap()
+
     private companion object {
         fun createTempDir(): File = Files.createTempDirectory("ap-test").toFile().apply {
+            deleteOnExit()
+        }
+        
+        fun createIncrementalDataFile(): File = File.createTempFile("incrementalData", "txt").apply {
             deleteOnExit()
         }
     }
@@ -60,6 +74,11 @@ abstract class AbstractProcessorTest : AbstractBytecodeTextTest() {
         
         val apExtension = AnnotationProcessingExtensionForTests(processors)
         AnalysisCompletedHandlerExtension.registerExtension(project, apExtension)
+
+        project.registerServiceInstance(JeElementRegistry::class.java, JeElementRegistry())
+
+        Extensions.getRootArea().getExtensionPoint(DefaultErrorMessages.Extension.EP_NAME)
+                .registerExtension(DefaultErrorMessagesAnnotationProcessing())
 
         return environment
     }
@@ -92,7 +111,7 @@ abstract class AbstractProcessorTest : AbstractBytecodeTextTest() {
             vararg supportedAnnotations: String
     ) = testAP(false, name, { set, roundEnv, env -> fail("Should not run") }, *supportedAnnotations)
 
-    private fun testAP(
+    protected fun testAP(
             shouldRun: Boolean,
             name: String,
             process: (Set<TypeElement>, RoundEnvironment, ProcessingEnvironment) -> Unit,
@@ -136,7 +155,11 @@ abstract class AbstractProcessorTest : AbstractBytecodeTextTest() {
             fail("Annotation processor " + (if (shouldRun) "was not started" else "was started"))
         }
     }
-    
+
+    protected fun TypeElement.findMethods(name: String): List<JeMethodExecutableElement> {
+        return enclosedElements.filterIsInstance<JeMethodExecutableElement>().filter { it.simpleName.toString() == name }
+    }
+
     protected fun TypeElement.findMethod(name: String, vararg parameterTypes: String): JeMethodExecutableElement {
         return enclosedElements.first {
             if (it !is JeMethodExecutableElement
@@ -145,8 +168,12 @@ abstract class AbstractProcessorTest : AbstractBytecodeTextTest() {
             parameterTypes.zip(it.parameters).all { it.first == it.second.asType().toString() }
         } as JeMethodExecutableElement
     }
-    
-    protected fun ProcessingEnvironment.findClass(fqName: String) = elementUtils.getTypeElement(fqName) as JeTypeElement 
+
+    protected fun TypeElement.findField(name: String): JeVariableElement {
+        return enclosedElements.first { it is JeVariableElement && it.simpleName.toString() == name } as JeVariableElement
+    }
+
+    protected fun ProcessingEnvironment.findClass(fqName: String) = elementUtils.getTypeElement(fqName) as JeTypeElement
 
     protected fun assertEquals(expected: String, actual: Name) = assertEquals(expected, actual.toString())
 }

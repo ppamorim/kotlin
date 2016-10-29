@@ -35,6 +35,12 @@ public class ShortenRefsTestGenerated extends AbstractShortenRefsTest {
         KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("idea/testData/shortenRefs"), Pattern.compile("^([^.]+)\\.kt$"), true);
     }
 
+    @TestMetadata("annotation.kt")
+    public void testAnnotation() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("idea/testData/shortenRefs/annotation.kt");
+        doTest(fileName);
+    }
+
     @TestMetadata("ClassNameConflict.kt")
     public void testClassNameConflict() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("idea/testData/shortenRefs/ClassNameConflict.kt");
@@ -56,6 +62,12 @@ public class ShortenRefsTestGenerated extends AbstractShortenRefsTest {
     @TestMetadata("descriptorsChangeAfterImportInsertion.kt")
     public void testDescriptorsChangeAfterImportInsertion() throws Exception {
         String fileName = KotlinTestUtils.navigationMetadata("idea/testData/shortenRefs/descriptorsChangeAfterImportInsertion.kt");
+        doTest(fileName);
+    }
+
+    @TestMetadata("extensionFunctionVarInvokedWithQualifier.kt")
+    public void testExtensionFunctionVarInvokedWithQualifier() throws Exception {
+        String fileName = KotlinTestUtils.navigationMetadata("idea/testData/shortenRefs/extensionFunctionVarInvokedWithQualifier.kt");
         doTest(fileName);
     }
 

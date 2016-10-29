@@ -43,6 +43,10 @@ public class SpecialFiles {
         excludedFiles.add("functionNtoStringNoReflect.kt");
         excludedFiles.add("innerGeneric.kt");
         excludedFiles.add("simpleCreateType.kt");
+        excludedFiles.add("equalsHashCodeToString.kt");
+        excludedFiles.add("arrayOfKClasses.kt");
+        excludedFiles.add("enumKClassAnnotation.kt");
+        excludedFiles.add("primitivesAndArrays.kt");
 
         // Reflection is used to check full class name
         excludedFiles.add("native");
@@ -77,6 +81,9 @@ public class SpecialFiles {
         excludedFiles.add("topLevelProperty.kt");
         excludedFiles.add("typeParameters.kt");
         excludedFiles.add("kt13133.kt");
+        excludedFiles.add("genericOverriddenFunction.kt");
+        excludedFiles.add("genericOverriddenProperty.kt");
+        excludedFiles.add("genericProperty.kt");
 
         // StackOverflow with StringBuilder (escape())
         excludedFiles.add("kt684.kt");

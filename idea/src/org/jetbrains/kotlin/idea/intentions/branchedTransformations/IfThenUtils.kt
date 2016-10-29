@@ -33,9 +33,7 @@ import org.jetbrains.kotlin.resolve.BindingContextUtils
 import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.calls.smartcasts.DataFlowValueFactory
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
-
-val NULL_PTR_EXCEPTION_FQ = "java.lang.NullPointerException"
-val KOTLIN_NULL_PTR_EXCEPTION_FQ = "kotlin.KotlinNullPointerException"
+import org.jetbrains.kotlin.utils.addToStdlib.constant
 
 fun KtBinaryExpression.expressionComparedToNull(): KtExpression? {
     val operationToken = this.operationToken
@@ -73,7 +71,8 @@ fun KtThrowExpression.throwsNullPointerExceptionWithNoArguments(): Boolean {
     val declDescriptor = descriptor?.containingDeclaration ?: return false
 
     val exceptionName = DescriptorUtils.getFqName(declDescriptor).asString()
-    return (exceptionName == NULL_PTR_EXCEPTION_FQ || exceptionName == KOTLIN_NULL_PTR_EXCEPTION_FQ) && thrownExpression.valueArguments.isEmpty()
+    return exceptionName in constant { setOf("kotlin.KotlinNullPointerException", "kotlin.NullPointerException", "java.lang.NullPointerException") }
+           && thrownExpression.valueArguments.isEmpty()
 }
 
 fun KtExpression.evaluatesTo(other: KtExpression): Boolean {
@@ -100,8 +99,8 @@ fun KtIfExpression.introduceValueForCondition(occurrenceInThenClause: KtExpressi
     KotlinIntroduceVariableHandler.doRefactoring(project,
                                                  editor,
                                                  occurrenceInConditional,
-                                                 listOf(occurrenceInConditional, occurrenceInThenClause),
-                                                 null)
+                                                 false,
+                                                 listOf(occurrenceInConditional, occurrenceInThenClause), null)
 }
 
 fun KtNameReferenceExpression.inlineIfDeclaredLocallyAndOnlyUsedOnceWithPrompt(editor: Editor?) {
@@ -131,8 +130,7 @@ fun KtPostfixExpression.inlineBaseExpressionIfApplicableWithPrompt(editor: Edito
     (this.baseExpression as? KtNameReferenceExpression)?.inlineIfDeclaredLocallyAndOnlyUsedOnceWithPrompt(editor)
 }
 
-fun KtExpression.isStableVariable(): Boolean {
-    val context = this.analyze()
+fun KtExpression.isStableVariable(context: BindingContext = this.analyze()): Boolean {
     val descriptor = BindingContextUtils.extractVariableDescriptorFromReference(context, this)
     return descriptor is VariableDescriptor &&
            DataFlowValueFactory.isStableValue(descriptor, DescriptorUtils.getContainingModule(descriptor))

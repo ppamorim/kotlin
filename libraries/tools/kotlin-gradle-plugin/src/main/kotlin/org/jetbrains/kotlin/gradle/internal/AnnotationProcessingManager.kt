@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 JetBrains s.r.o.
+ * Copyright 2010-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ import org.jetbrains.kotlin.com.intellij.psi.PsiFileFactory
 import org.jetbrains.kotlin.com.intellij.psi.PsiJavaFile
 import org.jetbrains.kotlin.com.intellij.psi.impl.PsiFileFactoryImpl
 import org.jetbrains.kotlin.config.CompilerConfiguration
+import org.jetbrains.kotlin.gradle.dsl.KotlinJvmOptionsImpl
 import org.jetbrains.kotlin.gradle.plugin.*
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.jetbrains.kotlin.gradle.tasks.KotlinTasksProvider
@@ -36,15 +37,14 @@ import org.jetbrains.kotlin.gradle.tasks.kapt.generateAnnotationProcessorWrapper
 import org.jetbrains.kotlin.gradle.tasks.kapt.generateKotlinAptAnnotation
 import java.io.File
 import java.io.IOException
-import java.util.*
 import java.util.zip.ZipFile
 
-fun Project.initKapt(
+internal fun Project.initKapt(
         kotlinTask: KotlinCompile,
         javaTask: AbstractCompile,
         kaptManager: AnnotationProcessingManager,
         variantName: String,
-        kotlinOptions: Any?,
+        kotlinOptions: KotlinJvmOptionsImpl?,
         subpluginEnvironment: SubpluginEnvironment,
         tasksProvider: KotlinTasksProvider
 ): KotlinCompile? {
@@ -102,27 +102,22 @@ fun Project.initKapt(
 private fun Project.createKotlinAfterJavaTask(
         javaTask: AbstractCompile,
         kotlinTask: KotlinCompile,
-        kotlinOptions: Any?,
+        kotlinOptions: KotlinJvmOptionsImpl?,
         tasksProvider: KotlinTasksProvider
 ): KotlinCompile {
-    val kotlinAfterJavaTask = with (tasksProvider.createKotlinJVMTask(this, kotlinTask.name + KOTLIN_AFTER_JAVA_TASK_SUFFIX)) {
+    val kotlinAfterJavaTask = with (tasksProvider.createKotlinJVMTask(this, kotlinTask.name + KOTLIN_AFTER_JAVA_TASK_SUFFIX, kotlinTask.sourceSetName)) {
         mapClasspath { kotlinTask.classpath }
         this
     }
 
     kotlinAfterJavaTask.dependsOn(javaTask)
     javaTask.finalizedByIfNotFailed(kotlinAfterJavaTask)
-
-    kotlinAfterJavaTask.extensions.extraProperties.set("defaultModuleName", "${project.name}-${kotlinTask.name}")
-    if (kotlinOptions != null) {
-        kotlinAfterJavaTask.setProperty("kotlinOptions", kotlinOptions)
-    }
-
+    kotlinAfterJavaTask.parentKotlinOptionsImpl = kotlinOptions
     return kotlinAfterJavaTask
 }
 
 class AnnotationProcessingManager(
-        private val task: AbstractCompile,
+        task: AbstractCompile,
         private val javaTask: JavaCompile,
         private val taskQualifier: String,
         private val aptFiles: Set<File>,
@@ -131,7 +126,6 @@ class AnnotationProcessingManager(
         private val androidVariant: Any? = null) {
 
     private val project = task.project
-    private val random = Random()
     val wrappersDirectory = File(aptWorkingDir, "wrappers")
     val hackAnnotationDir = File(aptWorkingDir, "java_src")
 
@@ -206,7 +200,7 @@ class AnnotationProcessingManager(
 
     private fun appendAdditionalComplerArgs() {
         val kaptExtension = project.extensions.getByType(KaptExtension::class.java)
-        val args = kaptExtension.getAdditionalArguments(project, androidVariant, getAndroidExtension())
+        val args = kaptExtension.getAdditionalArgumentsForJavac(project, androidVariant, getAndroidExtension())
         if (args.isEmpty()) return
 
         javaTask.modifyCompilerArguments { list ->

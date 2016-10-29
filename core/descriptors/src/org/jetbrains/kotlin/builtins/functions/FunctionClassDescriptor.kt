@@ -16,6 +16,7 @@
 
 package org.jetbrains.kotlin.builtins.functions
 
+import org.jetbrains.kotlin.builtins.BuiltInsPackageFragment
 import org.jetbrains.kotlin.builtins.KOTLIN_REFLECT_FQ_NAME
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns.BUILT_INS_PACKAGE_FQ_NAME
 import org.jetbrains.kotlin.descriptors.*
@@ -93,7 +94,7 @@ class FunctionClassDescriptor(
     override fun getUnsubstitutedMemberScope() = memberScope
 
     override fun getCompanionObjectDescriptor() = null
-    override fun getConstructors() = emptyList<ConstructorDescriptor>()
+    override fun getConstructors() = emptyList<ClassConstructorDescriptor>()
     override fun getKind() = ClassKind.INTERFACE
     override fun getModality() = Modality.ABSTRACT
     override fun getUnsubstitutedPrimaryConstructor() = null
@@ -129,8 +130,8 @@ class FunctionClassDescriptor(
 
             // For KFunction{n}, add corresponding numbered Function{n} class, e.g. Function2 for KFunction2
             if (functionKind == Kind.KFunction) {
-                val module = containingDeclaration.containingDeclaration
-                val kotlinPackageFragment = module.getPackage(BUILT_INS_PACKAGE_FQ_NAME).fragments.single()
+                val packageView = containingDeclaration.containingDeclaration.getPackage(BUILT_INS_PACKAGE_FQ_NAME)
+                val kotlinPackageFragment = packageView.fragments.filterIsInstance<BuiltInsPackageFragment>().single()
 
                 add(kotlinPackageFragment, Kind.Function.numberedClassName(arity))
             }
@@ -143,7 +144,6 @@ class FunctionClassDescriptor(
         override fun getDeclarationDescriptor() = this@FunctionClassDescriptor
         override fun isDenotable() = true
         override fun isFinal() = false
-        override val annotations: Annotations get() = Annotations.EMPTY
 
         override fun toString() = declarationDescriptor.toString()
 

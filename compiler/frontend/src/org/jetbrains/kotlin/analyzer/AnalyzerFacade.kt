@@ -17,6 +17,7 @@
 package org.jetbrains.kotlin.analyzer
 
 import com.intellij.psi.search.GlobalSearchScope
+import org.jetbrains.kotlin.builtins.DefaultBuiltIns
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.container.ComponentProvider
 import org.jetbrains.kotlin.context.ModuleContext
@@ -31,9 +32,9 @@ import org.jetbrains.kotlin.descriptors.impl.ModuleDescriptorImpl
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.resolve.CompilerEnvironment
 import org.jetbrains.kotlin.resolve.TargetEnvironment
 import org.jetbrains.kotlin.resolve.TargetPlatform
-import org.jetbrains.kotlin.resolve.createModule
 import org.jetbrains.kotlin.utils.singletonOrEmptyList
 import java.util.*
 
@@ -147,10 +148,10 @@ abstract class AnalyzerFacade<in P : PlatformAnalysisParameters> {
             modules: Collection<M>,
             modulesContent: (M) -> ModuleContent,
             platformParameters: P,
-            targetEnvironment: TargetEnvironment,
-            builtIns: KotlinBuiltIns,
+            targetEnvironment: TargetEnvironment = CompilerEnvironment,
+            builtIns: KotlinBuiltIns = DefaultBuiltIns.Instance,
             delegateResolver: ResolverForProject<M> = EmptyResolverForProject(),
-            packagePartProviderFactory: (M, ModuleContent) -> PackagePartProvider = { module, content -> PackagePartProvider.EMPTY },
+            packagePartProviderFactory: (M, ModuleContent) -> PackagePartProvider = { module, content -> PackagePartProvider.Empty },
             firstDependency: M? = null
     ): ResolverForProject<M> {
         val storageManager = projectContext.storageManager
@@ -159,7 +160,7 @@ abstract class AnalyzerFacade<in P : PlatformAnalysisParameters> {
             modules.forEach {
                 module ->
                 descriptorByModule[module] =
-                        targetPlatform.createModule(module.name, storageManager, builtIns, module.capabilities)
+                        ModuleDescriptorImpl(module.name, storageManager, builtIns, module.capabilities)
             }
             return ResolverForProjectImpl(debugName, descriptorByModule, delegateResolver)
         }
@@ -169,36 +170,32 @@ abstract class AnalyzerFacade<in P : PlatformAnalysisParameters> {
         fun computeDependencyDescriptors(module: M): List<ModuleDescriptorImpl> {
             val orderedDependencies = firstDependency.singletonOrEmptyList() + module.dependencies()
             val dependenciesDescriptors = orderedDependencies.mapTo(ArrayList<ModuleDescriptorImpl>()) {
-                        dependencyInfo ->
-                        resolverForProject.descriptorForModule(dependencyInfo as M)
-                    }
+                dependencyInfo ->
+                resolverForProject.descriptorForModule(dependencyInfo as M)
+            }
             module.dependencyOnBuiltIns().adjustDependencies(
                     resolverForProject.descriptorForModule(module).builtIns.builtInsModule, dependenciesDescriptors)
             return dependenciesDescriptors
+        }
+
+        fun computeModulesWhoseInternalsAreVisible(module: M): Set<ModuleDescriptorImpl> {
+            return module.modulesWhoseInternalsAreVisible().mapTo(LinkedHashSet()) { resolverForProject.descriptorForModule(it as M) }
         }
 
         fun setupModuleDependencies() {
             modules.forEach {
                 module ->
                 resolverForProject.descriptorForModule(module).setDependencies(
-                        LazyModuleDependencies(storageManager) { computeDependencyDescriptors(module) }
+                        LazyModuleDependencies(
+                                storageManager,
+                                { computeDependencyDescriptors(module) },
+                                { computeModulesWhoseInternalsAreVisible(module) }
+                        )
                 )
             }
         }
 
         setupModuleDependencies()
-
-        fun addFriends() {
-            modules.forEach {
-                module ->
-                val descriptor = resolverForProject.descriptorForModule(module)
-                module.modulesWhoseInternalsAreVisible().forEach {
-                    resolverForProject.descriptorForModule(it as M).addFriend(descriptor)
-                }
-            }
-        }
-
-        addFriends()
 
         fun initializeResolverForProject() {
             modules.forEach {

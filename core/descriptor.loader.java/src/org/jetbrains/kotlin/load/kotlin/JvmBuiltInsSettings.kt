@@ -17,8 +17,11 @@
 package org.jetbrains.kotlin.load.kotlin
 
 import org.jetbrains.kotlin.builtins.BuiltInsInitializer
+import org.jetbrains.kotlin.builtins.CloneableClassScope
+import org.jetbrains.kotlin.builtins.JvmBuiltInClassDescriptorFactory
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.descriptors.*
+import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptorImpl
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationsImpl
 import org.jetbrains.kotlin.descriptors.annotations.createDeprecatedAnnotation
 import org.jetbrains.kotlin.descriptors.impl.ClassDescriptorImpl
@@ -27,10 +30,12 @@ import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.load.java.components.JavaResolverCache
 import org.jetbrains.kotlin.load.java.lazy.descriptors.LazyJavaClassDescriptor
 import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.name.FqNameUnsafe
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.platform.JavaToKotlinClassMap
 import org.jetbrains.kotlin.platform.createMappedTypeParametersSubstitution
 import org.jetbrains.kotlin.resolve.OverridingUtil
+import org.jetbrains.kotlin.resolve.descriptorUtil.LOW_PRIORITY_IN_OVERLOAD_RESOLUTION_FQ_NAME
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameSafe
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameUnsafe
 import org.jetbrains.kotlin.resolve.jvm.JvmPrimitiveType
@@ -47,19 +52,25 @@ import org.jetbrains.kotlin.types.LazyWrappedType
 import org.jetbrains.kotlin.utils.DFS
 import org.jetbrains.kotlin.utils.SmartSet
 import org.jetbrains.kotlin.utils.addToStdlib.check
+import org.jetbrains.kotlin.utils.addToStdlib.singletonList
 import java.io.Serializable
 import java.util.*
 
 open class JvmBuiltInsSettings(
         private val moduleDescriptor: ModuleDescriptor,
         storageManager: StorageManager,
-        deferredOwnerModuleDescriptor: () -> ModuleDescriptor
+        deferredOwnerModuleDescriptor: () -> ModuleDescriptor,
+        isAdditionalBuiltInsFeatureSupported: () -> Boolean
 ) : AdditionalClassPartsProvider, PlatformDependentDeclarationFilter {
     private val j2kClassMap = JavaToKotlinClassMap.INSTANCE
 
     private val ownerModuleDescriptor: ModuleDescriptor by lazy(deferredOwnerModuleDescriptor)
+    private val isAdditionalBuiltInsFeatureSupported: Boolean by lazy(isAdditionalBuiltInsFeatureSupported)
 
     private val mockSerializableType = storageManager.createMockJavaIoSerializableType()
+    private val cloneableType by storageManager.createLazyValue {
+        moduleDescriptor.builtIns.getBuiltInClassByName(JvmBuiltInClassDescriptorFactory.CLONEABLE_CLASS_ID.shortClassName).defaultType
+    }
 
     private val javaAnalogueClassesWithCustomSupertypeCache = storageManager.createCacheWithNotNullValues<FqName, ClassDescriptor>()
 
@@ -68,6 +79,28 @@ open class JvmBuiltInsSettings(
         moduleDescriptor.builtIns.createDeprecatedAnnotation(
                 "This member is not fully supported by Kotlin compiler, so it may be absent or have different signature in next major version"
         ).let { AnnotationsImpl(listOf(it)) }
+    }
+
+    private val notSupportedDeprecation by storageManager.createLazyValue {
+        // We use both LowPriorityInOverloadResolution to achieve the following goals:
+        // - If there is something to resolve to beside an additional built-in member, it's *almost* always will win
+        // - Otherwise error will be reported because of Deprecated annotation with Error level
+        val lowPriorityAnnotation =
+                ClassDescriptorImpl(
+                        moduleDescriptor.getPackage(LOW_PRIORITY_IN_OVERLOAD_RESOLUTION_FQ_NAME.parent()),
+                        LOW_PRIORITY_IN_OVERLOAD_RESOLUTION_FQ_NAME.shortName(), Modality.FINAL, ClassKind.ANNOTATION_CLASS,
+                        moduleDescriptor.builtIns.anyType.singletonList(), SourceElement.NO_SOURCE
+                ).run {
+                    initialize(MemberScope.Empty, emptySet(), null)
+                    AnnotationDescriptorImpl(defaultType, emptyMap(), SourceElement.NO_SOURCE)
+                }
+
+        val errorDeprecation = moduleDescriptor.builtIns.createDeprecatedAnnotation(
+                "This member is not supported by Kotlin compiler on this language level",
+                level = DeprecationLevel.ERROR.name
+        )
+
+        AnnotationsImpl(listOf(lowPriorityAnnotation, errorDeprecation))
     }
 
     private fun StorageManager.createMockJavaIoSerializableType(): KotlinType {
@@ -87,49 +120,66 @@ open class JvmBuiltInsSettings(
     }
 
     override fun getSupertypes(classDescriptor: DeserializedClassDescriptor): Collection<KotlinType> {
-        if (isSerializableInJava(classDescriptor.fqNameSafe)) {
-            return listOf(mockSerializableType)
+        val fqName = classDescriptor.fqNameUnsafe
+        return when {
+            isArrayOrPrimitiveArray(fqName) -> listOf(cloneableType, mockSerializableType)
+            isSerializableInJava(fqName) -> listOf(mockSerializableType)
+            else -> listOf()
         }
-        else return listOf()
     }
 
-    override fun getFunctions(name: Name, classDescriptor: DeserializedClassDescriptor): Collection<SimpleFunctionDescriptor> =
-            getAdditionalFunctions(classDescriptor) {
-                it.getContributedFunctions(name, NoLookupLocation.FROM_BUILTINS)
-            }
-            .mapNotNull {
-                additionalMember ->
-                val substitutedWithKotlinTypeParameters =
-                        additionalMember.substitute(
-                                createMappedTypeParametersSubstitution(
-                                        additionalMember.containingDeclaration as ClassDescriptor, classDescriptor).buildSubstitutor()
-                        ) as SimpleFunctionDescriptor
+    override fun getFunctions(name: Name, classDescriptor: DeserializedClassDescriptor): Collection<SimpleFunctionDescriptor> {
+        if (name == CloneableClassScope.CLONE_NAME && KotlinBuiltIns.isArrayOrPrimitiveArray(classDescriptor)) {
+            return listOf(createCloneForArray(
+                    classDescriptor, cloneableType.memberScope.getContributedFunctions(name, NoLookupLocation.FROM_BUILTINS).single()
+            ))
+        }
 
-                substitutedWithKotlinTypeParameters.newCopyBuilder().apply {
-                    setOwner(classDescriptor)
-                    setDispatchReceiverParameter(classDescriptor.thisAsReceiverParameter)
-                    setPreserveSourceElement()
-                    setSubstitution(UnsafeVarianceTypeSubstitution(moduleDescriptor.builtIns))
+        return getAdditionalFunctions(classDescriptor) {
+            it.getContributedFunctions(name, NoLookupLocation.FROM_BUILTINS)
+        }.mapNotNull {
+            additionalMember ->
+            val substitutedWithKotlinTypeParameters =
+                    additionalMember.substitute(
+                            createMappedTypeParametersSubstitution(
+                                    additionalMember.containingDeclaration as ClassDescriptor, classDescriptor).buildSubstitutor()
+                    ) as SimpleFunctionDescriptor
 
-                    val memberStatus = additionalMember.getJdkMethodStatus()
-                    when (memberStatus) {
-                        JDKMemberStatus.BLACK_LIST -> {
-                            // Black list methods in final class can't be overridden or called with 'super'
-                            if (classDescriptor.isFinalClass) return@mapNotNull null
-                            setHiddenForResolutionEverywhereBesideSupercalls()
-                        }
+            substitutedWithKotlinTypeParameters.newCopyBuilder().apply {
+                setOwner(classDescriptor)
+                setDispatchReceiverParameter(classDescriptor.thisAsReceiverParameter)
+                setPreserveSourceElement()
+                setSubstitution(UnsafeVarianceTypeSubstitution(moduleDescriptor.builtIns))
 
-                        JDKMemberStatus.NOT_CONSIDERED -> {
-                            setAdditionalAnnotations(notConsideredDeprecation)
-                        }
-
-                        JDKMemberStatus.DROP -> return@mapNotNull null
-
-                        JDKMemberStatus.WHITE_LIST -> {} // Do nothing
+                val memberStatus = additionalMember.getJdkMethodStatus()
+                when (memberStatus) {
+                    JDKMemberStatus.BLACK_LIST -> {
+                        // Black list methods in final class can't be overridden or called with 'super'
+                        if (classDescriptor.isFinalClass) return@mapNotNull null
+                        setHiddenForResolutionEverywhereBesideSupercalls()
                     }
 
-                }.build()!!
-            }
+                    JDKMemberStatus.NOT_CONSIDERED -> {
+                        if (!isAdditionalBuiltInsFeatureSupported) {
+                            setAdditionalAnnotations(notSupportedDeprecation)
+                        }
+                        else {
+                            setAdditionalAnnotations(notConsideredDeprecation)
+                        }
+                    }
+
+                    JDKMemberStatus.DROP -> return@mapNotNull null
+
+                    JDKMemberStatus.WHITE_LIST -> {
+                        if (!isAdditionalBuiltInsFeatureSupported) {
+                            setAdditionalAnnotations(notSupportedDeprecation)
+                        }
+                    }
+                }
+
+            }.build()!!
+        }
+    }
 
     override fun getFunctionsNames(classDescriptor: DeserializedClassDescriptor): Set<Name> =
             // NB: It's just an approximation that could be calculated relatively fast
@@ -169,6 +219,15 @@ open class JvmBuiltInsSettings(
                     !analogueMember.isMutabilityViolation(isMutable)
                 }
     }
+
+    private fun createCloneForArray(
+            arrayClassDescriptor: DeserializedClassDescriptor,
+            cloneFromCloneable: SimpleFunctionDescriptor
+    ): SimpleFunctionDescriptor = cloneFromCloneable.newCopyBuilder().apply {
+        setOwner(arrayClassDescriptor)
+        setVisibility(Visibilities.PUBLIC)
+        setReturnType(arrayClassDescriptor.defaultType)
+    }.build()!!
 
     private fun SimpleFunctionDescriptor.isMutabilityViolation(isMutable: Boolean): Boolean {
         val owner = containingDeclaration as ClassDescriptor
@@ -231,7 +290,7 @@ open class JvmBuiltInsSettings(
         return ownerModuleDescriptor.resolveClassByFqName(javaAnalogueFqName, NoLookupLocation.FROM_BUILTINS) as? LazyJavaClassDescriptor
     }
 
-    override fun getConstructors(classDescriptor: DeserializedClassDescriptor): Collection<ConstructorDescriptor> {
+    override fun getConstructors(classDescriptor: DeserializedClassDescriptor): Collection<ClassConstructorDescriptor> {
         if (classDescriptor.kind != ClassKind.CLASS) return emptyList()
 
         val javaAnalogueDescriptor = classDescriptor.getJavaAnalogue() ?: return emptyList()
@@ -260,11 +319,14 @@ open class JvmBuiltInsSettings(
                 setPreserveSourceElement()
                 setSubstitution(substitutor.substitution)
 
-                if (SignatureBuildingComponents.signature(javaAnalogueDescriptor, javaConstructor.computeJvmDescriptor()) !in WHITE_LIST_CONSTRUCTOR_SIGNATURES) {
+                if (!isAdditionalBuiltInsFeatureSupported) {
+                    setAdditionalAnnotations(notSupportedDeprecation)
+                }
+                else if (SignatureBuildingComponents.signature(javaAnalogueDescriptor, javaConstructor.computeJvmDescriptor()) !in WHITE_LIST_CONSTRUCTOR_SIGNATURES) {
                     setAdditionalAnnotations(notConsideredDeprecation)
                 }
 
-            }.build() as ConstructorDescriptor
+            }.build() as ClassConstructorDescriptor
         }
     }
 
@@ -284,12 +346,11 @@ open class JvmBuiltInsSettings(
             valueParameters.single().type.constructor.declarationDescriptor?.fqNameUnsafe == classDescriptor.fqNameUnsafe
 
     companion object {
-        fun isSerializableInJava(classFqName: FqName): Boolean {
-            val fqNameUnsafe = classFqName.toUnsafe()
-            if (fqNameUnsafe == KotlinBuiltIns.FQ_NAMES.array || KotlinBuiltIns.isPrimitiveArray(fqNameUnsafe)) {
+        fun isSerializableInJava(fqName: FqNameUnsafe): Boolean {
+            if (isArrayOrPrimitiveArray(fqName)) {
                 return true
             }
-            val javaClassId = JavaToKotlinClassMap.INSTANCE.mapKotlinToJava(fqNameUnsafe) ?: return false
+            val javaClassId = JavaToKotlinClassMap.INSTANCE.mapKotlinToJava(fqName) ?: return false
             val classViaReflection = try {
                 Class.forName(javaClassId.asSingleFqName().asString())
             }
@@ -297,6 +358,10 @@ open class JvmBuiltInsSettings(
                 return false
             }
             return Serializable::class.java.isAssignableFrom(classViaReflection)
+        }
+
+        private fun isArrayOrPrimitiveArray(fqName: FqNameUnsafe): Boolean {
+            return fqName == KotlinBuiltIns.FQ_NAMES.array || KotlinBuiltIns.isPrimitiveArray(fqName)
         }
 
         val DROP_LIST_METHOD_SIGNATURES: Set<String> =

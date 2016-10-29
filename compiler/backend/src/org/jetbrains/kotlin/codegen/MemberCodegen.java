@@ -24,6 +24,7 @@ import kotlin.jvm.functions.Function1;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.kotlin.backend.common.CodegenUtil;
+import org.jetbrains.kotlin.codegen.annotation.AnnotatedSimple;
 import org.jetbrains.kotlin.codegen.context.*;
 import org.jetbrains.kotlin.codegen.inline.*;
 import org.jetbrains.kotlin.codegen.serialization.JvmSerializerExtension;
@@ -43,7 +44,6 @@ import org.jetbrains.kotlin.psi.*;
 import org.jetbrains.kotlin.resolve.BindingContext;
 import org.jetbrains.kotlin.resolve.BindingContextUtils;
 import org.jetbrains.kotlin.resolve.DescriptorToSourceUtils;
-import org.jetbrains.kotlin.resolve.annotations.AnnotationUtilKt;
 import org.jetbrains.kotlin.resolve.constants.ConstantValue;
 import org.jetbrains.kotlin.resolve.constants.evaluate.ConstantExpressionEvaluator;
 import org.jetbrains.kotlin.resolve.descriptorUtil.DescriptorUtilsKt;
@@ -57,18 +57,15 @@ import org.jetbrains.kotlin.storage.LockBasedStorageManager;
 import org.jetbrains.kotlin.storage.NotNullLazyValue;
 import org.jetbrains.kotlin.types.ErrorUtils;
 import org.jetbrains.kotlin.types.KotlinType;
-import org.jetbrains.org.objectweb.asm.AnnotationVisitor;
-import org.jetbrains.org.objectweb.asm.Label;
-import org.jetbrains.org.objectweb.asm.MethodVisitor;
-import org.jetbrains.org.objectweb.asm.Type;
+import org.jetbrains.org.objectweb.asm.*;
 import org.jetbrains.org.objectweb.asm.commons.InstructionAdapter;
 import org.jetbrains.org.objectweb.asm.commons.Method;
 
 import java.util.*;
 
 import static org.jetbrains.kotlin.codegen.AsmUtil.*;
-import static org.jetbrains.kotlin.codegen.ClassBuilderModeUtilKt.shouldGenerateMetadata;
 import static org.jetbrains.kotlin.descriptors.CallableMemberDescriptor.Kind.SYNTHESIZED;
+import static org.jetbrains.kotlin.resolve.BindingContext.TYPE_ALIAS;
 import static org.jetbrains.kotlin.resolve.BindingContext.VARIABLE;
 import static org.jetbrains.kotlin.resolve.DescriptorUtils.*;
 import static org.jetbrains.kotlin.resolve.jvm.AsmTypes.*;
@@ -76,7 +73,7 @@ import static org.jetbrains.kotlin.resolve.jvm.diagnostics.JvmDeclarationOrigin.
 import static org.jetbrains.kotlin.resolve.jvm.diagnostics.JvmDeclarationOriginKt.Synthetic;
 import static org.jetbrains.org.objectweb.asm.Opcodes.*;
 
-public abstract class MemberCodegen<T extends KtElement/* TODO: & JetDeclarationContainer*/> {
+public abstract class MemberCodegen<T extends KtElement/* TODO: & JetDeclarationContainer*/> implements InnerClassConsumer {
     protected final GenerationState state;
     protected final T element;
     protected final FieldOwnerContext context;
@@ -128,7 +125,7 @@ public abstract class MemberCodegen<T extends KtElement/* TODO: & JetDeclaration
 
         generateSyntheticParts();
 
-        if (shouldGenerateMetadata(state.getClassBuilderMode())) {
+        if (state.getClassBuilderMode().generateMetadata) {
             generateKotlinMetadataAnnotation();
         }
 
@@ -184,10 +181,10 @@ public abstract class MemberCodegen<T extends KtElement/* TODO: & JetDeclaration
         v.done();
     }
 
-    public void genFunctionOrProperty(@NotNull KtDeclaration functionOrProperty) {
-        if (functionOrProperty instanceof KtNamedFunction) {
+    public void genSimpleMember(@NotNull KtDeclaration declaration) {
+        if (declaration instanceof KtNamedFunction) {
             try {
-                functionCodegen.gen((KtNamedFunction) functionOrProperty);
+                functionCodegen.gen((KtNamedFunction) declaration);
             }
             catch (ProcessCanceledException e) {
                 throw e;
@@ -196,12 +193,12 @@ public abstract class MemberCodegen<T extends KtElement/* TODO: & JetDeclaration
                 throw e;
             }
             catch (Exception e) {
-                throw new CompilationException("Failed to generate function " + functionOrProperty.getName(), e, functionOrProperty);
+                throw new CompilationException("Failed to generate function " + declaration.getName(), e, declaration);
             }
         }
-        else if (functionOrProperty instanceof KtProperty) {
+        else if (declaration instanceof KtProperty) {
             try {
-                propertyCodegen.gen((KtProperty) functionOrProperty);
+                propertyCodegen.gen((KtProperty) declaration);
             }
             catch (ProcessCanceledException e) {
                 throw e;
@@ -210,12 +207,44 @@ public abstract class MemberCodegen<T extends KtElement/* TODO: & JetDeclaration
                 throw e;
             }
             catch (Exception e) {
-                throw new CompilationException("Failed to generate property " + functionOrProperty.getName(), e, functionOrProperty);
+                throw new CompilationException("Failed to generate property " + declaration.getName(), e, declaration);
             }
+        }
+        else if (declaration instanceof KtTypeAlias) {
+            genTypeAlias((KtTypeAlias) declaration);
         }
         else {
-            throw new IllegalArgumentException("Unknown parameter: " + functionOrProperty);
+            throw new IllegalArgumentException("Unknown parameter: " + declaration);
         }
+    }
+
+    private void genTypeAlias(@NotNull KtTypeAlias typeAlias) {
+        if (!state.getClassBuilderMode().generateMetadata) return;
+
+        TypeAliasDescriptor typeAliasDescriptor = bindingContext.get(TYPE_ALIAS, typeAlias);
+        if (typeAliasDescriptor == null) {
+            throw ExceptionLogger.logDescriptorNotFound("Type alias " + typeAlias.getName() + " should have a descriptor", typeAlias);
+        }
+
+        genTypeAliasAnnotationsMethodIfRequired(typeAliasDescriptor);
+    }
+
+    private void genTypeAliasAnnotationsMethodIfRequired(TypeAliasDescriptor typeAliasDescriptor) {
+        boolean isAnnotationsMethodOwner = CodegenContextUtil.isImplClassOwner(context);
+        Annotations annotations = typeAliasDescriptor.getAnnotations();
+        if (!isAnnotationsMethodOwner || annotations.getAllAnnotations().isEmpty()) return;
+
+        int flags = ACC_DEPRECATED | ACC_PRIVATE | ACC_STATIC | ACC_SYNTHETIC;
+        String name = JvmAbi.getSyntheticMethodNameForAnnotatedTypeAlias(typeAliasDescriptor.getName());
+        String desc = "()V";
+        Method syntheticMethod = new Method(name, desc);
+
+        MethodVisitor mv = v.newMethod(JvmDeclarationOriginKt.OtherOrigin(typeAliasDescriptor), flags, syntheticMethod.getName(),
+                                       syntheticMethod.getDescriptor(), null, null);
+        AnnotationCodegen.forMethod(mv, this, typeMapper).genAnnotations(new AnnotatedSimple(annotations), Type.VOID_TYPE, null);
+        mv.visitCode();
+        mv.visitInsn(Opcodes.RETURN);
+        mv.visitEnd();
     }
 
     public static void genClassOrObject(
@@ -241,8 +270,8 @@ public abstract class MemberCodegen<T extends KtElement/* TODO: & JetDeclaration
         new ImplementationBodyCodegen(aClass, classContext, classBuilder, state, parentCodegen, false).generate();
     }
 
-    private static void badDescriptor(ClassDescriptor descriptor, ClassBuilderMode mode) {
-        if (mode == ClassBuilderMode.FULL) {
+    public static void badDescriptor(ClassDescriptor descriptor, ClassBuilderMode mode) {
+        if (mode.generateBodies) {
             throw new IllegalStateException("Generating bad descriptor in ClassBuilderMode = " + mode + ": " + descriptor);
         }
     }
@@ -275,6 +304,7 @@ public abstract class MemberCodegen<T extends KtElement/* TODO: & JetDeclaration
 
     // It's necessary for proper recovering of classId by plain string JVM descriptor when loading annotations
     // See FileBasedKotlinClass.convertAnnotationVisitor
+    @Override
     public void addInnerClassInfoFromAnnotation(@NotNull ClassDescriptor classDescriptor) {
         DeclarationDescriptor current = classDescriptor;
         while (current != null && !isTopLevelDeclaration(current)) {
@@ -286,6 +316,10 @@ public abstract class MemberCodegen<T extends KtElement/* TODO: & JetDeclaration
     }
 
     private void writeInnerClass(@NotNull ClassDescriptor innerClass) {
+        writeInnerClass(innerClass, typeMapper, v);
+    }
+
+    public static void writeInnerClass(@NotNull ClassDescriptor innerClass, @NotNull KotlinTypeMapper typeMapper, @NotNull ClassBuilder v) {
         DeclarationDescriptor containing = innerClass.getContainingDeclaration();
         String outerClassInternalName = null;
         if (containing instanceof ClassDescriptor) {
@@ -434,7 +468,7 @@ public abstract class MemberCodegen<T extends KtElement/* TODO: & JetDeclaration
                 initializer != null ? ExpressionCodegen.getCompileTimeConstant(initializer, bindingContext) : null;
         // we must write constant values for fields in light classes,
         // because Java's completion for annotation arguments uses this information
-        if (initializerValue == null) return state.getClassBuilderMode() == ClassBuilderMode.FULL;
+        if (initializerValue == null) return state.getClassBuilderMode().generateBodies;
 
         //TODO: OPTIMIZATION: don't initialize static final fields
         KotlinType jetType = getPropertyOrDelegateType(property, propertyDescriptor);
@@ -505,7 +539,7 @@ public abstract class MemberCodegen<T extends KtElement/* TODO: & JetDeclaration
         v.newField(NO_ORIGIN, ACC_PRIVATE | ACC_STATIC | ACC_FINAL | ACC_SYNTHETIC, JvmAbi.DELEGATED_PROPERTIES_ARRAY_NAME,
                    "[" + K_PROPERTY_TYPE, null, null);
 
-        if (state.getClassBuilderMode() != ClassBuilderMode.FULL) return;
+        if (!state.getClassBuilderMode().generateBodies) return;
 
         InstructionAdapter iv = createOrGetClInitCodegen().v;
         iv.iconst(delegatedProperties.size());
@@ -526,7 +560,7 @@ public abstract class MemberCodegen<T extends KtElement/* TODO: & JetDeclaration
             // TODO: generate the container once and save to a local field instead (KT-10495)
             ClosureCodegen.generateCallableReferenceDeclarationContainer(iv, property, state);
             iv.aconst(property.getName().asString());
-            iv.aconst(PropertyReferenceCodegen.getPropertyReferenceSignature(property, state));
+            PropertyReferenceCodegen.generateCallableReferenceSignature(iv, property, state);
             iv.invokespecial(
                     implType.getInternalName(), "<init>",
                     Type.getMethodDescriptor(Type.VOID_TYPE, K_DECLARATION_CONTAINER_TYPE, JAVA_STRING_TYPE, JAVA_STRING_TYPE), false
@@ -579,7 +613,7 @@ public abstract class MemberCodegen<T extends KtElement/* TODO: & JetDeclaration
                 fieldAsmType.getDescriptor(), null, null
         );
 
-        if (state.getClassBuilderMode() == ClassBuilderMode.FULL) {
+        if (state.getClassBuilderMode().generateBodies) {
             InstructionAdapter iv = createOrGetClInitCodegen().v;
             iv.anew(thisAsmType);
             iv.dup();
@@ -699,7 +733,7 @@ public abstract class MemberCodegen<T extends KtElement/* TODO: & JetDeclaration
             reg = 0;
         }
         else if (accessorIsConstructor || (accessorDescriptor != null && KotlinTypeMapper.isAccessor(accessorDescriptor) && hasDispatchReceiver)) {
-            if (!AnnotationUtilKt.isPlatformStaticInObjectOrClass(functionDescriptor)) {
+            if (!CodegenUtilKt.isJvmStaticInObjectOrClass(functionDescriptor)) {
                 iv.load(0, OBJECT_TYPE);
             }
         }

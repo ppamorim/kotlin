@@ -19,6 +19,7 @@ package org.jetbrains.kotlin.idea.core.script
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.ServiceManager
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ex.ProjectRootManagerEx
 import com.intellij.openapi.startup.StartupManager
@@ -35,8 +36,10 @@ import com.intellij.util.io.URLUtil
 import org.jetbrains.annotations.TestOnly
 import org.jetbrains.kotlin.idea.util.application.runReadAction
 import org.jetbrains.kotlin.idea.util.application.runWriteAction
-import org.jetbrains.kotlin.script.*
-import org.jetbrains.kotlin.utils.PathUtil
+import org.jetbrains.kotlin.script.KotlinScriptDefinitionProvider
+import org.jetbrains.kotlin.script.KotlinScriptExternalImportsProvider
+import org.jetbrains.kotlin.script.StandardScriptDefinition
+import org.jetbrains.kotlin.script.makeScriptDefsFromTemplatesProviderExtensions
 import java.io.File
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
@@ -45,13 +48,10 @@ import kotlin.concurrent.write
 @Suppress("SimplifyAssertNotNull")
 class KotlinScriptConfigurationManager(
         private val project: Project,
+        private val dumbService: DumbService,
         private val scriptDefinitionProvider: KotlinScriptDefinitionProvider,
         private val scriptExternalImportsProvider: KotlinScriptExternalImportsProvider
 ) {
-
-    private val kotlinEnvVars: Map<String, List<String>> by lazy {
-        generateKotlinScriptClasspathEnvVarsFromPaths(project, PathUtil.getKotlinPathsForIdeaPlugin())
-    }
 
     init {
         reloadScriptDefinitions()
@@ -78,14 +78,29 @@ class KotlinScriptConfigurationManager(
         toVfsRoots(scriptExternalImportsProvider.getKnownCombinedClasspath().distinct())
     }
 
+    private val allScriptsClasspathScope = ClearableLazyValue(cacheLock) {
+        NonClasspathDirectoriesScope(getAllScriptsClasspath())
+    }
+
     private val allLibrarySourcesCache = ClearableLazyValue(cacheLock) {
         toVfsRoots(scriptExternalImportsProvider.getKnownSourceRoots().distinct())
+    }
+
+    private val allLibrarySourcesScope = ClearableLazyValue(cacheLock) {
+        NonClasspathDirectoriesScope(getAllLibrarySources())
     }
 
     private fun notifyRootsChanged() {
         // TODO: it seems invokeLater leads to inconsistent behaviour (at least in tests)
         ApplicationManager.getApplication().invokeLater {
-            runWriteAction { ProjectRootManagerEx.getInstanceEx(project)?.makeRootsChange(EmptyRunnable.getInstance(), false, true) }
+            runWriteAction {
+                if (project.isDisposed) return@runWriteAction
+
+                ProjectRootManagerEx.getInstanceEx(project)?.makeRootsChange(EmptyRunnable.getInstance(), false, true)
+                dumbService.runWhenSmart {
+                    ScriptDependenciesModificationTracker.getInstance(project).incModificationCount()
+                }
+            }
         }
     }
 
@@ -97,13 +112,12 @@ class KotlinScriptConfigurationManager(
 
     fun getAllLibrarySources(): List<VirtualFile> = allLibrarySourcesCache.get()
 
-    fun getAllScriptsClasspathScope() = NonClasspathDirectoriesScope(getAllScriptsClasspath())
+    fun getAllScriptsClasspathScope() = allScriptsClasspathScope.get()
 
-    fun getAllLibrarySourcesScope() = NonClasspathDirectoriesScope(getAllLibrarySources())
+    fun getAllLibrarySourcesScope() = allLibrarySourcesScope.get()
 
     private fun reloadScriptDefinitions() {
-        (makeScriptDefsFromTemplatesProviderExtensions(project, { ep, ex -> log.warn("[kts] Error loading definition from ${ep.id}", ex) }) +
-         loadScriptConfigsFromProjectRoot(File(project.basePath ?: "")).map { KotlinConfigurableScriptDefinition(it, kotlinEnvVars) }).let {
+        makeScriptDefsFromTemplatesProviderExtensions(project, { ep, ex -> log.warn("[kts] Error loading definition from ${ep.id}", ex) }).let {
             if (it.isNotEmpty()) {
                 scriptDefinitionProvider.setScriptDefinitions(it + StandardScriptDefinition)
             }
@@ -130,7 +144,9 @@ class KotlinScriptConfigurationManager(
 
     private fun invalidateLocalCaches() {
         allScriptsClasspathCache.clear()
+        allScriptsClasspathScope.clear()
         allLibrarySourcesCache.clear()
+        allLibrarySourcesScope.clear()
     }
 
 

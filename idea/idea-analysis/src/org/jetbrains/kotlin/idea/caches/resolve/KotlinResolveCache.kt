@@ -23,7 +23,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.analyzer.AnalysisResult
-import org.jetbrains.kotlin.config.LanguageVersion
+import org.jetbrains.kotlin.config.LanguageVersionSettingsImpl
 import org.jetbrains.kotlin.container.ComponentProvider
 import org.jetbrains.kotlin.container.get
 import org.jetbrains.kotlin.context.GlobalContext
@@ -173,17 +173,12 @@ private object KotlinResolveDataProvider {
                     trace,
                     targetPlatform,
                     componentProvider.get<BodyResolveCache>(),
-                    LanguageVersion.LATEST // TODO: see KT-12410
-            ).get<LazyTopDownAnalyzerForTopLevel>()
+                    LanguageVersionSettingsImpl.DEFAULT // TODO: see KT-12410
+            ).get<LazyTopDownAnalyzer>()
 
-            lazyTopDownAnalyzer.analyzeDeclarations(
-                    TopDownAnalysisMode.TopLevelDeclarations,
-                    listOf(analyzableElement)
-            )
-            return AnalysisResult.success(
-                    trace.bindingContext,
-                    module
-            )
+            lazyTopDownAnalyzer.analyzeDeclarations(TopDownAnalysisMode.TopLevelDeclarations, listOf(analyzableElement))
+
+            return AnalysisResult.success(trace.bindingContext, module)
         }
         catch (e: ProcessCanceledException) {
             throw e

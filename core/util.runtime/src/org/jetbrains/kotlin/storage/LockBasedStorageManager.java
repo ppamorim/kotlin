@@ -19,6 +19,7 @@ package org.jetbrains.kotlin.storage;
 import kotlin.Unit;
 import kotlin.jvm.functions.Function0;
 import kotlin.jvm.functions.Function1;
+import kotlin.text.StringsKt;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.kotlin.utils.ExceptionUtilsKt;
@@ -32,6 +33,8 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class LockBasedStorageManager implements StorageManager {
+    private static final String PACKAGE_NAME = StringsKt.substringBeforeLast(LockBasedStorageManager.class.getCanonicalName(), ".", "");
+
     public interface ExceptionHandlingStrategy {
         ExceptionHandlingStrategy THROW = new ExceptionHandlingStrategy() {
             @NotNull
@@ -80,18 +83,15 @@ public class LockBasedStorageManager implements StorageManager {
     }
 
     public LockBasedStorageManager() {
-        this(getPointOfConstruction(), ExceptionHandlingStrategy.THROW, new ReentrantLock());
+        this(defaultDebugName(), ExceptionHandlingStrategy.THROW, new ReentrantLock());
     }
 
     protected LockBasedStorageManager(@NotNull ExceptionHandlingStrategy exceptionHandlingStrategy) {
-        this(getPointOfConstruction(), exceptionHandlingStrategy, new ReentrantLock());
+        this(defaultDebugName(), exceptionHandlingStrategy, new ReentrantLock());
     }
 
-    private static String getPointOfConstruction() {
-        StackTraceElement[] trace = Thread.currentThread().getStackTrace();
-        // we need to skip frames for getStackTrace(), this method and the constructor that's calling it
-        if (trace.length <= 3) return "<unknown creating class>";
-        return trace[3].toString();
+    private static String defaultDebugName() {
+        return "<unknown creating class>";
     }
 
     @Override
@@ -478,19 +478,18 @@ public class LockBasedStorageManager implements StorageManager {
             @NotNull LockBasedStorageManager base,
             @NotNull ExceptionHandlingStrategy newStrategy
     ) {
-        return new LockBasedStorageManager(getPointOfConstruction(), newStrategy, base.lock);
+        return new LockBasedStorageManager(defaultDebugName(), newStrategy, base.lock);
     }
 
     @NotNull
     private static <T extends Throwable> T sanitizeStackTrace(@NotNull T throwable) {
-        String storagePackageName = LockBasedStorageManager.class.getPackage().getName();
         StackTraceElement[] stackTrace = throwable.getStackTrace();
         int size = stackTrace.length;
 
         int firstNonStorage = -1;
         for (int i = 0; i < size; i++) {
             // Skip everything (memoized functions and lazy values) from package org.jetbrains.kotlin.storage
-            if (!stackTrace[i].getClassName().startsWith(storagePackageName)) {
+            if (!stackTrace[i].getClassName().startsWith(PACKAGE_NAME)) {
                 firstNonStorage = i;
                 break;
             }

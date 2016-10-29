@@ -127,6 +127,18 @@ public class ParsingTestGenerated extends AbstractParsingTest {
             doParsingTest(fileName);
         }
 
+        @TestMetadata("CommentsBindingInLambda.kt")
+        public void testCommentsBindingInLambda() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/psi/CommentsBindingInLambda.kt");
+            doParsingTest(fileName);
+        }
+
+        @TestMetadata("CommentsBindingInStatementBlock.kt")
+        public void testCommentsBindingInStatementBlock() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/psi/CommentsBindingInStatementBlock.kt");
+            doParsingTest(fileName);
+        }
+
         @TestMetadata("Constructors.kt")
         public void testConstructors() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/psi/Constructors.kt");
@@ -142,6 +154,18 @@ public class ParsingTestGenerated extends AbstractParsingTest {
         @TestMetadata("DefaultKeyword.kt")
         public void testDefaultKeyword() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/psi/DefaultKeyword.kt");
+            doParsingTest(fileName);
+        }
+
+        @TestMetadata("destructuringInLambdas.kt")
+        public void testDestructuringInLambdas() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/psi/destructuringInLambdas.kt");
+            doParsingTest(fileName);
+        }
+
+        @TestMetadata("destructuringInLambdas_ERR.kt")
+        public void testDestructuringInLambdas_ERR() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/psi/destructuringInLambdas_ERR.kt");
             doParsingTest(fileName);
         }
 
@@ -529,6 +553,12 @@ public class ParsingTestGenerated extends AbstractParsingTest {
             doParsingTest(fileName);
         }
 
+        @TestMetadata("LineCommentsInBlock.kt")
+        public void testLineCommentsInBlock() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/psi/LineCommentsInBlock.kt");
+            doParsingTest(fileName);
+        }
+
         @TestMetadata("LocalDeclarations.kt")
         public void testLocalDeclarations() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/psi/LocalDeclarations.kt");
@@ -884,6 +914,24 @@ public class ParsingTestGenerated extends AbstractParsingTest {
                 @TestMetadata("annotationValueArgumentsAmbiguity.kt")
                 public void testAnnotationValueArgumentsAmbiguity() throws Exception {
                     String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/psi/annotation/at/annotationValueArgumentsAmbiguity.kt");
+                    doParsingTest(fileName);
+                }
+
+                @TestMetadata("blockLevelExpressions.kt")
+                public void testBlockLevelExpressions() throws Exception {
+                    String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/psi/annotation/at/blockLevelExpressions.kt");
+                    doParsingTest(fileName);
+                }
+
+                @TestMetadata("blockLevelExpressionsNoNewLine.kt")
+                public void testBlockLevelExpressionsNoNewLine() throws Exception {
+                    String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/psi/annotation/at/blockLevelExpressionsNoNewLine.kt");
+                    doParsingTest(fileName);
+                }
+
+                @TestMetadata("danglingBlockLevelAnnotations.kt")
+                public void testDanglingBlockLevelAnnotations() throws Exception {
+                    String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/psi/annotation/at/danglingBlockLevelAnnotations.kt");
                     doParsingTest(fileName);
                 }
 

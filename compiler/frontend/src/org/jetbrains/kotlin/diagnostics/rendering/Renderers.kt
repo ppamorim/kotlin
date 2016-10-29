@@ -25,6 +25,7 @@ import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.cfg.WhenMissingCase
 import org.jetbrains.kotlin.cfg.hasUnknown
 import org.jetbrains.kotlin.descriptors.*
+import org.jetbrains.kotlin.descriptors.impl.TypeAliasConstructorDescriptor
 import org.jetbrains.kotlin.diagnostics.rendering.TabledDescriptorRenderer.newTable
 import org.jetbrains.kotlin.diagnostics.rendering.TabledDescriptorRenderer.newText
 import org.jetbrains.kotlin.psi.KtClass
@@ -50,6 +51,7 @@ import org.jetbrains.kotlin.types.checker.KotlinTypeChecker
 import org.jetbrains.kotlin.utils.addToStdlib.firstIsInstanceOrNull
 import java.io.PrintWriter
 import java.io.StringWriter
+import java.lang.AssertionError
 
 object Renderers {
 
@@ -85,7 +87,9 @@ object Renderers {
         val declarationKindWithSpace = when (it) {
             is PackageFragmentDescriptor -> "package "
             is ClassDescriptor -> "${it.renderKind()} "
+            is TypeAliasDescriptor -> "typealias "
             is ConstructorDescriptor -> "constructor "
+            is TypeAliasConstructorDescriptor -> "typealias constructor "
             is PropertyGetterDescriptor -> "property getter "
             is PropertySetterDescriptor -> "property setter "
             is FunctionDescriptor -> "function "
@@ -115,7 +119,7 @@ object Renderers {
 
     @JvmField val RENDER_CLASS_OR_OBJECT_NAME = Renderer<ClassDescriptor> { it.renderKindWithName() }
 
-    @JvmField val RENDER_TYPE = SmartTypeRenderer(DescriptorRenderer.FQ_NAMES_IN_TYPES)
+    @JvmField val RENDER_TYPE = SmartTypeRenderer(DescriptorRenderer.FQ_NAMES_IN_TYPES.withOptions { parameterNamesInFunctionalTypes = false })
 
     @JvmField val RENDER_POSITION_VARIANCE = Renderer {
         variance: Variance ->
@@ -338,16 +342,16 @@ object Renderers {
         }
 
         val typeParameter = typeVariableWithCapturedConstraint.originalTypeParameter
-
-        val explanation: String
         val upperBound = TypeIntersector.getUpperBoundsAsType(typeParameter)
-        if (!KotlinBuiltIns.isNullableAny(upperBound) && capturedTypeConstructor.typeProjection.projectionKind == Variance.IN_VARIANCE) {
-            explanation = "Type parameter has an upper bound '" + result.typeRenderer.render(upperBound, RenderingContext.of(upperBound)) + "'" +
-                          " that cannot be satisfied capturing 'in' projection"
+
+        assert(!KotlinBuiltIns.isNullableAny(upperBound) && capturedTypeConstructor.typeProjection.projectionKind == Variance.IN_VARIANCE) {
+            "There is the only reason to report TYPE_INFERENCE_CANNOT_CAPTURE_TYPES"
         }
-        else {
-            explanation = "Only top-level type projections can be captured"
-        }
+
+        val explanation =
+                "Type parameter has an upper bound '" + result.typeRenderer.render(upperBound, RenderingContext.of(upperBound)) + "'" +
+                " that cannot be satisfied capturing 'in' projection"
+
         result.text(newText().normal(
                 "'" + typeParameter.name + "'" +
                 " cannot capture " +

@@ -21,7 +21,6 @@ import org.jetbrains.kotlin.asJava.classes.KtLightClass
 import org.jetbrains.kotlin.asJava.classes.KtLightClassForFacade
 import org.jetbrains.kotlin.asJava.elements.KtLightDeclaration
 import org.jetbrains.kotlin.asJava.elements.KtLightMethod
-import org.jetbrains.kotlin.builtins.DefaultBuiltIns
 import org.jetbrains.kotlin.descriptors.PropertyDescriptor
 import org.jetbrains.kotlin.j2k.ast.Import
 import org.jetbrains.kotlin.j2k.ast.ImportList
@@ -60,7 +59,7 @@ private fun Converter.convertImport(fqName: FqName, ref: PsiJavaCodeReferenceEle
         if (annotationConverter.isImportNotRequired(fqName)) return emptyList()
 
         // If imported class has a kotlin analog, drop the import
-        if (!JavaToKotlinClassMap.INSTANCE.mapPlatformClass(fqName, DefaultBuiltIns.Instance).isEmpty()) return emptyList()
+        if (JavaToKotlinClassMap.INSTANCE.isJavaPlatformClass(fqName)) return emptyList()
     }
 
     //TODO: how to detect compiled Kotlin here?
@@ -156,7 +155,7 @@ private fun convertNonStaticImport(fqName: FqName, isOnDemand: Boolean, target: 
 private fun renderImportName(fqName: FqName, isOnDemand: Boolean)
         = if (isOnDemand) fqName.render() + ".*" else fqName.render()
 
-private val DEFAULT_IMPORTS_SET: Set<FqName> = JvmPlatform.defaultModuleParameters.defaultImports
+private val DEFAULT_IMPORTS_SET: Set<FqName> = JvmPlatform.defaultImports
         .filter { it.isAllUnder }
         .map { it.fqnPart() }
         .toSet()

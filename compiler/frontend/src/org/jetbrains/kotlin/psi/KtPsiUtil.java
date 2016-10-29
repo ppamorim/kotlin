@@ -42,7 +42,6 @@ import org.jetbrains.kotlin.parsing.KotlinExpressionParsing;
 import org.jetbrains.kotlin.psi.psiUtil.KtPsiUtilKt;
 import org.jetbrains.kotlin.resolve.StatementFilter;
 import org.jetbrains.kotlin.resolve.StatementFilterKt;
-import org.jetbrains.kotlin.types.expressions.OperatorConventions;
 
 import java.util.Collection;
 import java.util.HashSet;
@@ -276,34 +275,12 @@ public class KtPsiUtil {
         }
     }
 
-    public static boolean isVariableNotParameterDeclaration(@NotNull KtDeclaration declaration) {
+    public static boolean isRemovableVariableDeclaration(@NotNull KtDeclaration declaration) {
         if (!(declaration instanceof KtVariableDeclaration)) return false;
         if (declaration instanceof KtProperty) return true;
         assert declaration instanceof KtDestructuringDeclarationEntry;
-        KtDestructuringDeclarationEntry multiDeclarationEntry = (KtDestructuringDeclarationEntry) declaration;
-        return !(multiDeclarationEntry.getParent().getParent() instanceof KtForExpression);
-    }
-
-    @Nullable
-    public static Name getConventionName(@NotNull KtSimpleNameExpression simpleNameExpression) {
-        if (simpleNameExpression.getIdentifier() != null) {
-            return simpleNameExpression.getReferencedNameAsName();
-        }
-
-        PsiElement firstChild = simpleNameExpression.getFirstChild();
-        if (firstChild != null) {
-            IElementType elementType = firstChild.getNode().getElementType();
-            if (elementType instanceof KtToken) {
-                KtToken jetToken = (KtToken) elementType;
-                boolean isPrefixExpression = simpleNameExpression.getParent() instanceof KtPrefixExpression;
-                if (isPrefixExpression) {
-                    return OperatorConventions.getNameForOperationSymbol(jetToken, true, false);
-                }
-                return OperatorConventions.getNameForOperationSymbol(jetToken);
-            }
-        }
-
-        return null;
+        // We can always replace destructuring entry with _
+        return true;
     }
 
     @Nullable

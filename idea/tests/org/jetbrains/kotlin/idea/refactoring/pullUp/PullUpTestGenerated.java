@@ -49,9 +49,81 @@ public class PullUpTestGenerated extends AbstractPullUpTest {
             doKotlinTest(fileName);
         }
 
+        @TestMetadata("constructorParametersToInterface.kt")
+        public void testConstructorParametersToInterface() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/pullUp/k2k/constructorParametersToInterface.kt");
+            doKotlinTest(fileName);
+        }
+
+        @TestMetadata("constructorParametersToSuperClass.kt")
+        public void testConstructorParametersToSuperClass() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/pullUp/k2k/constructorParametersToSuperClass.kt");
+            doKotlinTest(fileName);
+        }
+
+        @TestMetadata("constructorParametersToSuperClassAndMakeAbstract.kt")
+        public void testConstructorParametersToSuperClassAndMakeAbstract() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/pullUp/k2k/constructorParametersToSuperClassAndMakeAbstract.kt");
+            doKotlinTest(fileName);
+        }
+
+        @TestMetadata("constructorParametersWithDefaultValue1.kt")
+        public void testConstructorParametersWithDefaultValue1() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/pullUp/k2k/constructorParametersWithDefaultValue1.kt");
+            doKotlinTest(fileName);
+        }
+
+        @TestMetadata("constructorParametersWithDefaultValue2.kt")
+        public void testConstructorParametersWithDefaultValue2() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/pullUp/k2k/constructorParametersWithDefaultValue2.kt");
+            doKotlinTest(fileName);
+        }
+
+        @TestMetadata("constructorParametersWithNamedArgs.kt")
+        public void testConstructorParametersWithNamedArgs() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/pullUp/k2k/constructorParametersWithNamedArgs.kt");
+            doKotlinTest(fileName);
+        }
+
+        @TestMetadata("constructorParametersWithNamedArgsAndDefault.kt")
+        public void testConstructorParametersWithNamedArgsAndDefault() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/pullUp/k2k/constructorParametersWithNamedArgsAndDefault.kt");
+            doKotlinTest(fileName);
+        }
+
+        @TestMetadata("constructorParametersWithVararg.kt")
+        public void testConstructorParametersWithVararg() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/pullUp/k2k/constructorParametersWithVararg.kt");
+            doKotlinTest(fileName);
+        }
+
         @TestMetadata("defaultValuesInOverride.kt")
         public void testDefaultValuesInOverride() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/pullUp/k2k/defaultValuesInOverride.kt");
+            doKotlinTest(fileName);
+        }
+
+        @TestMetadata("dropModifierWhenMovingSideOverride.kt")
+        public void testDropModifierWhenMovingSideOverride() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/pullUp/k2k/dropModifierWhenMovingSideOverride.kt");
+            doKotlinTest(fileName);
+        }
+
+        @TestMetadata("dropModifierWhenMovingSideOverrideWithAbstract.kt")
+        public void testDropModifierWhenMovingSideOverrideWithAbstract() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/pullUp/k2k/dropModifierWhenMovingSideOverrideWithAbstract.kt");
+            doKotlinTest(fileName);
+        }
+
+        @TestMetadata("dropModifierWhenMovingSideOverrideWithSuperEntry.kt")
+        public void testDropModifierWhenMovingSideOverrideWithSuperEntry() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/pullUp/k2k/dropModifierWhenMovingSideOverrideWithSuperEntry.kt");
+            doKotlinTest(fileName);
+        }
+
+        @TestMetadata("dropModifierWhenMovingSideOverrideWithSuperEntryAndAbstract.kt")
+        public void testDropModifierWhenMovingSideOverrideWithSuperEntryAndAbstract() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/pullUp/k2k/dropModifierWhenMovingSideOverrideWithSuperEntryAndAbstract.kt");
             doKotlinTest(fileName);
         }
 
@@ -193,6 +265,12 @@ public class PullUpTestGenerated extends AbstractPullUpTest {
             doKotlinTest(fileName);
         }
 
+        @TestMetadata("parameterNameConflict.kt")
+        public void testParameterNameConflict() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/pullUp/k2k/parameterNameConflict.kt");
+            doKotlinTest(fileName);
+        }
+
         @TestMetadata("parametersInPrimaryInitializer.kt")
         public void testParametersInPrimaryInitializer() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/pullUp/k2k/parametersInPrimaryInitializer.kt");
@@ -266,6 +344,12 @@ public class PullUpTestGenerated extends AbstractPullUpTest {
     public static class K2J extends AbstractPullUpTest {
         public void testAllFilesPresentInK2J() throws Exception {
             KotlinTestUtils.assertAllTestsPresentInSingleGeneratedClass(this.getClass(), new File("idea/testData/refactoring/pullUp/k2j"), Pattern.compile("^(.+)\\.kt$"));
+        }
+
+        @TestMetadata("constructorParameterToClass.kt")
+        public void testConstructorParameterToClass() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("idea/testData/refactoring/pullUp/k2j/constructorParameterToClass.kt");
+            doKotlinTest(fileName);
         }
 
         @TestMetadata("defaultValuesInOverride.kt")

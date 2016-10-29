@@ -28,6 +28,7 @@ import org.jetbrains.kotlin.idea.references.KtSimpleNameReference
 import org.jetbrains.kotlin.idea.references.canBeResolvedViaImport
 import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.idea.resolve.ResolutionFacade
+import org.jetbrains.kotlin.idea.resolve.frontendService
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.FqNameUnsafe
 import org.jetbrains.kotlin.name.Name
@@ -41,6 +42,7 @@ import org.jetbrains.kotlin.resolve.calls.smartcasts.DataFlowInfo
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameUnsafe
 import org.jetbrains.kotlin.resolve.descriptorUtil.isExtension
 import org.jetbrains.kotlin.resolve.descriptorUtil.module
+import org.jetbrains.kotlin.resolve.lazy.DefaultImportProvider
 import org.jetbrains.kotlin.resolve.lazy.descriptors.ClassResolutionScopesSupport
 import org.jetbrains.kotlin.resolve.scopes.*
 import org.jetbrains.kotlin.resolve.scopes.receivers.ImplicitReceiver
@@ -205,7 +207,7 @@ object ReplaceWithAnnotationAnalyzer {
     }
 
     private fun buildDefaultImportsScopes(resolutionFacade: ResolutionFacade, module: ModuleDescriptor): List<ImportingScope> {
-        val (allUnderImports, aliasImports) = module.defaultImports.partition { it.isAllUnder }
+        val (allUnderImports, aliasImports) = resolutionFacade.frontendService<DefaultImportProvider>().defaultImports.partition { it.isAllUnder }
         // this solution doesn't support aliased default imports with a different alias
         // TODO: Create import directives from ImportPath, create ImportResolver, create LazyResolverScope, see FileScopeProviderImpl
 
@@ -236,17 +238,11 @@ object ReplaceWithAnnotationAnalyzer {
             scope: LexicalScope,
             resolutionFacade: ResolutionFacade
     ): BindingContext {
-        val traceContext = BindingTraceContext()
-        val frontendService = if (module.builtIns.builtInsModule == module) {
-            // TODO: doubtful place, do we require this module or not? Built-ins module doesn't have some necessary components...
-            resolutionFacade.getFrontendService(ExpressionTypingServices::class.java)
-        }
-        else {
-            resolutionFacade.getFrontendService(module, ExpressionTypingServices::class.java)
-        }
-        PreliminaryDeclarationVisitor.createForExpression(expression, traceContext)
-        frontendService.getTypeInfo(scope, expression, TypeUtils.NO_EXPECTED_TYPE, DataFlowInfo.EMPTY, traceContext, false)
-        return traceContext.bindingContext
+        val trace = BindingTraceContext()
+        val expressionTypingServices = resolutionFacade.getFrontendService(module, ExpressionTypingServices::class.java)
+        PreliminaryDeclarationVisitor.createForExpression(expression, trace)
+        expressionTypingServices.getTypeInfo(scope, expression, TypeUtils.NO_EXPECTED_TYPE, DataFlowInfo.EMPTY, trace, false)
+        return trace.bindingContext
     }
 
     private fun getResolutionScope(descriptor: DeclarationDescriptor, ownerDescriptor: DeclarationDescriptor, additionalScopes: Collection<ImportingScope>): LexicalScope? {

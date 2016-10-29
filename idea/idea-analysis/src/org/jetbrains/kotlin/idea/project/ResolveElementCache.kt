@@ -23,7 +23,7 @@ import com.intellij.psi.util.CachedValuesManager
 import com.intellij.psi.util.PsiModificationTracker
 import com.intellij.util.containers.ContainerUtil
 import org.jetbrains.kotlin.cfg.ControlFlowInformationProvider
-import org.jetbrains.kotlin.config.LanguageVersion
+import org.jetbrains.kotlin.config.LanguageVersionSettingsImpl
 import org.jetbrains.kotlin.container.get
 import org.jetbrains.kotlin.context.SimpleGlobalContext
 import org.jetbrains.kotlin.context.withModule
@@ -83,10 +83,11 @@ class ResolveElementCache(
             },
             false)
 
-    private class CachedPartialResolve(val bindingContext: BindingContext, file: KtFile) {
+    private class CachedPartialResolve(val bindingContext: BindingContext, file: KtFile, val mode: BodyResolveMode) {
         private val modificationStamp: Long? = modificationStamp(file)
 
-        fun isUpToDate(file: KtFile) = modificationStamp == modificationStamp(file)
+        fun isUpToDate(file: KtFile, newMode: BodyResolveMode) =
+                modificationStamp == modificationStamp(file) && mode.doesNotLessThan(newMode)
 
         private fun modificationStamp(file: KtFile): Long? {
             return if (!file.isPhysical) // for non-physical file we don't get MODIFICATION_COUNT increased and must reset data on any modification of the file
@@ -117,7 +118,7 @@ class ResolveElementCache(
             = getElementsAdditionalResolve(function, null, BodyResolveMode.FULL)
 
     fun resolvePrimaryConstructorParametersDefaultValues(ktClass: KtClass): BindingContext {
-        return constructorAdditionalResolve(resolveSession, ktClass, ktClass.getContainingKtFile()).bindingContext
+        return constructorAdditionalResolve(resolveSession, ktClass, ktClass.getContainingKtFile(), BindingTraceFilter.NO_DIAGNOSTICS).bindingContext
     }
 
     @Deprecated("Use getElementsAdditionalResolve")
@@ -149,7 +150,7 @@ class ResolveElementCache(
                 return bindingContext
             }
 
-            BodyResolveMode.PARTIAL -> {
+            else -> {
                 if (resolveElement !is KtDeclaration) {
                     return getElementsAdditionalResolve(resolveElement, null, BodyResolveMode.FULL)
                 }
@@ -158,18 +159,18 @@ class ResolveElementCache(
                 val statementsToResolve = contextElements!!.map { PartialBodyResolveFilter.findStatementToResolve(it, resolveElement) }.distinct()
                 val partialResolveMap = partialBodyResolveCache.value
                 val cachedResults = statementsToResolve.map { partialResolveMap[it ?: resolveElement] }
-                if (cachedResults.all { it != null && it.isUpToDate(file) }) { // partial resolve is already cached for these statements
+                if (cachedResults.all { it != null && it.isUpToDate(file, bodyResolveMode) }) { // partial resolve is already cached for these statements
                     return CompositeBindingContext.create(cachedResults.map { it!!.bindingContext }.distinct())
                 }
 
-                val (bindingContext, statementFilter) = performElementAdditionalResolve(resolveElement, contextElements, BodyResolveMode.PARTIAL)
+                val (bindingContext, statementFilter) = performElementAdditionalResolve(resolveElement, contextElements, bodyResolveMode)
 
                 if (statementFilter == StatementFilter.NONE) { // partial resolve is not supported for the given declaration - full resolve performed instead
                     fullResolveMap[resolveElement] = CachedFullResolve(bindingContext, resolveElement)
                     return bindingContext
                 }
 
-                val resolveToCache = CachedPartialResolve(bindingContext, file)
+                val resolveToCache = CachedPartialResolve(bindingContext, file, bodyResolveMode)
 
                 for (statement in (statementFilter as PartialBodyResolveFilter).allStatementsToResolve) {
                     if (!partialResolveMap.containsKey(statement) && bindingContext[BindingContext.PROCESSED, statement] == true) {
@@ -181,15 +182,6 @@ class ResolveElementCache(
                 partialResolveMap[resolveElement] = resolveToCache
 
                 return bindingContext
-            }
-
-            BodyResolveMode.PARTIAL_FOR_COMPLETION -> {
-                if (resolveElement !is KtDeclaration) {
-                    return getElementsAdditionalResolve(resolveElement, null, BodyResolveMode.FULL)
-                }
-
-                // not cached
-                return performElementAdditionalResolve(resolveElement, contextElements, bodyResolveMode).first
             }
         }
     }
@@ -216,7 +208,9 @@ class ResolveElementCache(
                 contextElements
                         .map { it.getNonStrictParentOfType<KtDeclaration>() }
                         .filterNotNull()
-                        .filterTo(declarationsToResolve) { it !is KtAnonymousInitializer }
+                        .filterTo(declarationsToResolve) {
+                            it !is KtAnonymousInitializer && it !is KtDestructuringDeclaration && it !is KtDestructuringDeclarationEntry
+                        }
                 addResolveSessionBindingContext = true
             }
         }
@@ -235,9 +229,9 @@ class ResolveElementCache(
                 element,
                 KtNamedFunction::class.java,
                 KtAnonymousInitializer::class.java,
+                KtPrimaryConstructor::class.java,
                 KtSecondaryConstructor::class.java,
                 KtProperty::class.java,
-                KtParameter::class.java,
                 KtSuperTypeList::class.java,
                 KtInitializerList::class.java,
                 KtImportList::class.java,
@@ -263,15 +257,6 @@ class ResolveElementCache(
             }
 
             is KtPackageDirective -> return element
-
-            is KtParameter -> {
-                val klass = elementOfAdditionalResolve.getParentOfType<KtClass>(strict = true)
-                if (klass != null && elementOfAdditionalResolve.getParent() == klass.getPrimaryConstructorParameterList()) {
-                    return klass
-                }
-
-                return elementOfAdditionalResolve
-            }
 
             is KtDeclaration -> {
                 if (element is KtParameter && !KtPsiUtil.isLocal(element)) {
@@ -311,17 +296,19 @@ class ResolveElementCache(
         }
 
         val trace: BindingTrace = when (resolveElement) {
-            is KtNamedFunction -> functionAdditionalResolve(resolveSession, resolveElement, file, createStatementFilter())
+            is KtNamedFunction -> functionAdditionalResolve(resolveSession, resolveElement, file, createStatementFilter(), bodyResolveMode.bindingTraceFilter)
 
-            is KtAnonymousInitializer -> initializerAdditionalResolve(resolveSession, resolveElement, file, createStatementFilter())
+            is KtAnonymousInitializer -> initializerAdditionalResolve(resolveSession, resolveElement, file, createStatementFilter(), bodyResolveMode.bindingTraceFilter)
 
-            is KtSecondaryConstructor -> secondaryConstructorAdditionalResolve(resolveSession, resolveElement, file, createStatementFilter())
+            is KtPrimaryConstructor -> constructorAdditionalResolve(resolveSession, resolveElement.parent as KtClass, file, bodyResolveMode.bindingTraceFilter)
 
-            is KtProperty -> propertyAdditionalResolve(resolveSession, resolveElement, file, createStatementFilter())
+            is KtSecondaryConstructor -> secondaryConstructorAdditionalResolve(resolveSession, resolveElement, file, createStatementFilter(), bodyResolveMode.bindingTraceFilter)
 
-            is KtSuperTypeList -> delegationSpecifierAdditionalResolve(resolveSession, resolveElement, resolveElement.getParent() as KtClassOrObject, file)
+            is KtProperty -> propertyAdditionalResolve(resolveSession, resolveElement, file, createStatementFilter(), bodyResolveMode.bindingTraceFilter)
 
-            is KtInitializerList -> delegationSpecifierAdditionalResolve(resolveSession, resolveElement, resolveElement.getParent() as KtEnumEntry, file)
+            is KtSuperTypeList -> delegationSpecifierAdditionalResolve(resolveSession, resolveElement, resolveElement.getParent() as KtClassOrObject, file, bodyResolveMode.bindingTraceFilter)
+
+            is KtInitializerList -> delegationSpecifierAdditionalResolve(resolveSession, resolveElement, resolveElement.getParent() as KtEnumEntry, file, bodyResolveMode.bindingTraceFilter)
 
             is KtImportList -> {
                 val resolver = resolveSession.fileScopeProvider.getImportResolver(resolveElement.getContainingKtFile())
@@ -341,9 +328,7 @@ class ResolveElementCache(
 
             is KtAnnotationEntry -> annotationAdditionalResolve(resolveSession, resolveElement)
 
-            is KtClass -> constructorAdditionalResolve(resolveSession, resolveElement, file)
-
-            is KtTypeAlias -> typealiasAdditionalResolve(resolveSession, resolveElement)
+            is KtTypeAlias -> typealiasAdditionalResolve(resolveSession, resolveElement, bodyResolveMode.bindingTraceFilter)
 
             is KtTypeParameter -> typeParameterAdditionalResolve(resolveSession, resolveElement)
 
@@ -353,7 +338,7 @@ class ResolveElementCache(
 
             else -> {
                 if (resolveElement.getParentOfType<KtPackageDirective>(true) != null) {
-                    packageRefAdditionalResolve(resolveSession, resolveElement)
+                    packageRefAdditionalResolve(resolveSession, resolveElement, bodyResolveMode.bindingTraceFilter)
                 }
                 else {
                     error("Invalid type of the topmost parent: $resolveElement\n${resolveElement.getElementTextWithContext()}")
@@ -368,8 +353,9 @@ class ResolveElementCache(
         return Pair(trace.bindingContext, statementFilterUsed)
     }
 
-    private fun packageRefAdditionalResolve(resolveSession: ResolveSession, ktElement: KtElement): BindingTrace {
-        val trace = createDelegatingTrace(ktElement)
+    private fun packageRefAdditionalResolve(resolveSession: ResolveSession, ktElement: KtElement,
+                                            bindingTraceFilter: BindingTraceFilter): BindingTrace {
+        val trace = createDelegatingTrace(ktElement, bindingTraceFilter)
 
         if (ktElement is KtSimpleNameExpression) {
             val header = ktElement.getParentOfType<KtPackageDirective>(true)!!
@@ -398,7 +384,7 @@ class ResolveElementCache(
     }
 
     private fun codeFragmentAdditionalResolve(codeFragment: KtCodeFragment, bodyResolveMode: BodyResolveMode): BindingTrace {
-        val trace = createDelegatingTrace(codeFragment)
+        val trace = createDelegatingTrace(codeFragment, bodyResolveMode.bindingTraceFilter)
 
         val contextResolveMode = if (bodyResolveMode == BodyResolveMode.PARTIAL)
             BodyResolveMode.PARTIAL_FOR_COMPLETION
@@ -413,7 +399,7 @@ class ResolveElementCache(
         val modifierList = ktAnnotationEntry.getParentOfType<KtModifierList>(true)
         val declaration = modifierList?.getParentOfType<KtDeclaration>(true)
         if (declaration != null) {
-            doResolveAnnotations(getAnnotationsByDeclaration(resolveSession, modifierList!!, declaration))
+            doResolveAnnotations(getAnnotationsByDeclaration(resolveSession, modifierList, declaration))
         }
         else {
             val fileAnnotationList = ktAnnotationEntry.getParentOfType<KtFileAnnotationList>(true)
@@ -456,8 +442,9 @@ class ResolveElementCache(
     }
 
     private fun delegationSpecifierAdditionalResolve(resolveSession: ResolveSession, ktElement: KtElement,
-                                                     classOrObject: KtClassOrObject, file: KtFile): BindingTrace {
-        val trace = createDelegatingTrace(ktElement)
+                                                     classOrObject: KtClassOrObject, file: KtFile,
+                                                     bindingTraceFilter: BindingTraceFilter): BindingTrace {
+        val trace = createDelegatingTrace(ktElement, bindingTraceFilter)
         val descriptor = resolveSession.resolveToDescriptor(classOrObject) as LazyClassDescriptor
 
         // Activate resolving of supertypes
@@ -475,8 +462,10 @@ class ResolveElementCache(
     }
 
     private fun propertyAdditionalResolve(resolveSession: ResolveSession, property: KtProperty,
-                                          file: KtFile, statementFilter: StatementFilter): BindingTrace {
-        val trace = createDelegatingTrace(property)
+                                          file: KtFile,
+                                          statementFilter: StatementFilter,
+                                          bindingTraceFilter: BindingTraceFilter): BindingTrace {
+        val trace = createDelegatingTrace(property, bindingTraceFilter)
 
         val bodyResolver = createBodyResolver(resolveSession, trace, file, statementFilter)
         val descriptor = resolveSession.resolveToDescriptor(property) as PropertyDescriptor
@@ -501,8 +490,9 @@ class ResolveElementCache(
     }
 
     private fun functionAdditionalResolve(resolveSession: ResolveSession, namedFunction: KtNamedFunction, file: KtFile,
-                                          statementFilter: StatementFilter): BindingTrace {
-        val trace = createDelegatingTrace(namedFunction)
+                                          statementFilter: StatementFilter,
+                                          bindingTraceFilter: BindingTraceFilter): BindingTrace {
+        val trace = createDelegatingTrace(namedFunction, bindingTraceFilter)
 
         val scope = resolveSession.declarationScopeProvider.getResolutionScopeForDeclaration(namedFunction)
         val functionDescriptor = resolveSession.resolveToDescriptor(namedFunction) as FunctionDescriptor
@@ -517,11 +507,12 @@ class ResolveElementCache(
     }
 
     private fun secondaryConstructorAdditionalResolve(resolveSession: ResolveSession, constructor: KtSecondaryConstructor,
-                                                      file: KtFile, statementFilter: StatementFilter): BindingTrace {
-        val trace = createDelegatingTrace(constructor)
+                                                      file: KtFile, statementFilter: StatementFilter,
+                                                      bindingTraceFilter: BindingTraceFilter): BindingTrace {
+        val trace = createDelegatingTrace(constructor, bindingTraceFilter)
 
         val scope = resolveSession.declarationScopeProvider.getResolutionScopeForDeclaration(constructor)
-        val constructorDescriptor = resolveSession.resolveToDescriptor(constructor) as ConstructorDescriptor
+        val constructorDescriptor = resolveSession.resolveToDescriptor(constructor) as ClassConstructorDescriptor
         ForceResolveUtil.forceResolveAllContents(constructorDescriptor)
 
         val bodyResolver = createBodyResolver(resolveSession, trace, file, statementFilter)
@@ -532,8 +523,8 @@ class ResolveElementCache(
         return trace
     }
 
-    private fun constructorAdditionalResolve(resolveSession: ResolveSession, klass: KtClass, file: KtFile): BindingTrace {
-        val trace = createDelegatingTrace(klass)
+    private fun constructorAdditionalResolve(resolveSession: ResolveSession, klass: KtClass, file: KtFile, filter : BindingTraceFilter): BindingTrace {
+        val trace = createDelegatingTrace(klass, filter)
         val scope = resolveSession.declarationScopeProvider.getResolutionScopeForDeclaration(klass)
 
         val classDescriptor = resolveSession.resolveToDescriptor(klass) as ClassDescriptor
@@ -541,14 +532,20 @@ class ResolveElementCache(
                                     ?: error("Can't get primary constructor for descriptor '$classDescriptor' " +
                                              "in from class '${klass.getElementTextWithContext()}'")
 
-        val bodyResolver = createBodyResolver(resolveSession, trace, file, StatementFilter.NONE)
-        bodyResolver.resolveConstructorParameterDefaultValuesAndAnnotations(DataFlowInfo.EMPTY, trace, klass, constructorDescriptor, scope)
+        val primaryConstructor = klass.getPrimaryConstructor()
+        if (primaryConstructor != null) {
+            val bodyResolver = createBodyResolver(resolveSession, trace, file, StatementFilter.NONE)
+            bodyResolver.resolveConstructorParameterDefaultValues(DataFlowInfo.EMPTY, trace, primaryConstructor, constructorDescriptor, scope)
+
+            forceResolveAnnotationsInside(primaryConstructor)
+        }
 
         return trace
     }
 
-    private fun typealiasAdditionalResolve(resolveSession: ResolveSession, typeAlias: KtTypeAlias): BindingTrace {
-        val trace = createDelegatingTrace(typeAlias)
+    private fun typealiasAdditionalResolve(resolveSession: ResolveSession, typeAlias: KtTypeAlias,
+                                           bindingTraceFilter: BindingTraceFilter): BindingTrace {
+        val trace = createDelegatingTrace(typeAlias, bindingTraceFilter)
         val typeAliasDescriptor = resolveSession.resolveToDescriptor(typeAlias)
         ForceResolveUtil.forceResolveAllContents(typeAliasDescriptor)
         forceResolveAnnotationsInside(typeAlias)
@@ -556,8 +553,9 @@ class ResolveElementCache(
     }
 
     private fun initializerAdditionalResolve(resolveSession: ResolveSession, anonymousInitializer: KtAnonymousInitializer,
-                                             file: KtFile, statementFilter: StatementFilter): BindingTrace {
-        val trace = createDelegatingTrace(anonymousInitializer)
+                                             file: KtFile, statementFilter: StatementFilter,
+                                             bindingTraceFilter: BindingTraceFilter): BindingTrace {
+        val trace = createDelegatingTrace(anonymousInitializer, bindingTraceFilter)
 
         val classOrObjectDescriptor = resolveSession.resolveToDescriptor(anonymousInitializer.containingDeclaration) as LazyClassDescriptor
 
@@ -590,14 +588,14 @@ class ResolveElementCache(
                 trace,
                 targetPlatform,
                 statementFilter,
-                LanguageVersion.LATEST // TODO: see KT-12410
+                LanguageVersionSettingsImpl.DEFAULT // TODO: see KT-12410
         ).get<BodyResolver>()
     }
 
     // All additional resolve should be done to separate trace
-    private fun createDelegatingTrace(resolveElement: KtElement): BindingTrace {
+    private fun createDelegatingTrace(resolveElement: KtElement, filter: BindingTraceFilter): BindingTrace {
         return resolveSession.storageManager.createSafeTrace(
-                DelegatingBindingTrace(resolveSession.bindingContext, "trace to resolve element", resolveElement))
+                DelegatingBindingTrace(resolveSession.bindingContext, "trace to resolve element", resolveElement, filter))
     }
 
     private class BodyResolveContextForLazy(
@@ -610,7 +608,7 @@ class ResolveElementCache(
 
         override fun getAnonymousInitializers(): MutableMap<KtAnonymousInitializer, ClassDescriptorWithResolutionScopes> = hashMapOf()
 
-        override fun getSecondaryConstructors(): MutableMap<KtSecondaryConstructor, ConstructorDescriptor> = hashMapOf()
+        override fun getSecondaryConstructors(): MutableMap<KtSecondaryConstructor, ClassConstructorDescriptor> = hashMapOf()
 
         override fun getProperties(): MutableMap<KtProperty, PropertyDescriptor> = hashMapOf()
 

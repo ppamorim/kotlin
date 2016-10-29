@@ -6,7 +6,7 @@
   <version>@snapshot@</version>
   <vendor url="http://www.jetbrains.com">JetBrains s.r.o.</vendor>
 
-  <idea-version since-build="145.257" until-build="163.*"/>
+  <idea-version since-build="145.257" until-build="171.*"/>
 
   <depends>com.intellij.modules.java</depends>
 
@@ -58,17 +58,6 @@
       <add-to-group group-id="NewGroup" anchor="after" relative-to-action="NewGroup1"/>
     </action>
 
-    <action id="ShowKotlinExpressionType" class="org.jetbrains.kotlin.idea.actions.ShowExpressionTypeAction"
-            text="Show Expression Type">
-      <keyboard-shortcut keymap="$default" first-keystroke="alt EQUALS"/>
-
-      <keyboard-shortcut keymap="Mac OS X" first-keystroke="control shift P"/>
-      <keyboard-shortcut keymap="Mac OS X" first-keystroke="alt EQUALS" remove="true"/>
-
-      <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="control shift P"/>
-      <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="alt EQUALS" remove="true"/>
-      <add-to-group group-id="CodeEditorViewGroup" anchor="last"/>
-    </action>
     <action id="ConvertJavaToKotlin" class="org.jetbrains.kotlin.idea.actions.JavaToKotlinAction"
             text="Convert Java File to Kotlin File">
       <keyboard-shortcut keymap="$default" first-keystroke="control alt shift K"/>
@@ -116,13 +105,6 @@
       <add-to-group group-id="IntroduceActionsGroup" anchor="after" relative-to-action="IntroduceField"/>
     </action>
 
-    <action id="IntroduceLambdaParameter"
-            class="org.jetbrains.kotlin.idea.refactoring.introduce.introduceParameter.IntroduceLambdaParameterAction"
-            text="La_mbda Parameter...">
-      <keyboard-shortcut keymap="$default" first-keystroke="control shift P"/>
-      <add-to-group group-id="IntroduceActionsGroup" anchor="after" relative-to-action="IntroduceParameter"/>
-    </action>
-
     <action id="CopyAsDiagnosticTest" class="org.jetbrains.kotlin.idea.actions.internal.CopyAsDiagnosticTestAction"
             text="Copy Current File As Diagnostic Test">
       <keyboard-shortcut keymap="$default" first-keystroke="control alt shift T"/>
@@ -164,7 +146,6 @@
 
     <action id="IntroduceTypeParameter" class="org.jetbrains.kotlin.idea.refactoring.introduce.introduceTypeParameter.IntroduceTypeParameterAction"
             text="T_ype Parameter...">
-      <keyboard-shortcut keymap="$default" first-keystroke="control alt shift Y"/>
       <add-to-group group-id="IntroduceActionsGroup" anchor="after" relative-to-action="ExtractFunctionToScope"/>
     </action>
 
@@ -301,6 +282,9 @@
     <projectService serviceInterface="org.jetbrains.kotlin.idea.caches.resolve.LibraryModificationTracker"
                     serviceImplementation="org.jetbrains.kotlin.idea.caches.resolve.LibraryModificationTracker"/>
 
+    <projectService serviceInterface="org.jetbrains.kotlin.idea.core.script.ScriptDependenciesModificationTracker"
+                    serviceImplementation="org.jetbrains.kotlin.idea.core.script.ScriptDependenciesModificationTracker"/>
+
     <projectService serviceInterface="org.jetbrains.kotlin.resolve.jvm.KotlinJavaPsiFacade"
                     serviceImplementation="org.jetbrains.kotlin.resolve.jvm.KotlinJavaPsiFacade"/>
 
@@ -319,6 +303,7 @@
 
     <gotoSymbolContributor implementation="org.jetbrains.kotlin.idea.goto.KotlinGotoSymbolContributor"/>
     <gotoClassContributor implementation="org.jetbrains.kotlin.idea.goto.KotlinGotoClassContributor"/>
+    <searchEverywhereClassifier implementation="org.jetbrains.kotlin.idea.goto.KotlinSearchEverywhereClassifier"/>
     <lang.importOptimizer language="kotlin" implementationClass="org.jetbrains.kotlin.idea.imports.KotlinImportOptimizer"/>
     <lang.namesValidator language="kotlin" implementationClass="org.jetbrains.kotlin.idea.refactoring.KotlinNamesValidator"/>
 
@@ -346,6 +331,7 @@
     <lang.elementManipulator forClass="org.jetbrains.kotlin.psi.KtStringTemplateExpression"
                              implementationClass="org.jetbrains.kotlin.psi.psiUtil.KtStringTemplateExpressionManipulator"/>
     <fileStructureGroupRuleProvider implementation="org.jetbrains.kotlin.idea.findUsages.KotlinDeclarationGroupRuleProvider"/>
+    <fileStructureGroupRuleProvider implementation="org.jetbrains.kotlin.idea.findUsages.KotlinDeclarationSecondLevelGroupRuleProvider"/>
     <importFilteringRule implementation="org.jetbrains.kotlin.idea.findUsages.KotlinImportFilteringRule"/>
     <lang.refactoringSupport language="kotlin" implementationClass="org.jetbrains.kotlin.idea.refactoring.KotlinRefactoringSupportProvider"/>
     <lang.surroundDescriptor language="kotlin"
@@ -404,6 +390,11 @@
     <codeInsight.parameterInfo language="kotlin" implementationClass="org.jetbrains.kotlin.idea.parameterInfo.KotlinFunctionTypeArgumentInfoHandler"/>
 
     <codeInsight.gotoSuper language="kotlin" implementationClass="org.jetbrains.kotlin.idea.codeInsight.GotoSuperActionHandler"/>
+
+    <codeInsight.template.postfixTemplateProvider language="kotlin"
+                                                  implementationClass="org.jetbrains.kotlin.idea.codeInsight.postfix.KtPostfixTemplateProvider"/>
+
+
     <typeDeclarationProvider implementation="org.jetbrains.kotlin.idea.codeInsight.KotlinTypeDeclarationProvider"/>
 
     <completion.contributor language="kotlin"
@@ -462,6 +453,7 @@
     <renameHandler implementation="org.jetbrains.kotlin.idea.refactoring.rename.JavaMemberByKotlinReferenceInplaceRenameHandler"/>
     <renameHandler implementation="org.jetbrains.kotlin.idea.refactoring.rename.RenameJvmNameHandler"/>
     <renameHandler implementation="org.jetbrains.kotlin.idea.refactoring.rename.KotlinDirectoryAsPackageRenameHandler"/>
+    <renameHandler implementation="org.jetbrains.kotlin.idea.refactoring.rename.RenameBackingFieldReferenceHandler"/>
     <automaticRenamerFactory implementation="org.jetbrains.kotlin.idea.refactoring.rename.AutomaticVariableRenamerFactory"/>
     <automaticRenamerFactory implementation="org.jetbrains.kotlin.idea.refactoring.rename.AutomaticVariableRenamerFactoryForJavaClass"/>
     <automaticRenamerFactory implementation="org.jetbrains.kotlin.idea.refactoring.rename.AutomaticVariableInJavaRenamerFactory"/>
@@ -510,6 +502,7 @@
     <extendWordSelectionHandler implementation="org.jetbrains.kotlin.idea.editor.wordSelection.KotlinInvokedExpressionSelectioner"/>
     <extendWordSelectionHandler implementation="org.jetbrains.kotlin.idea.editor.wordSelection.KotlinTypeSelectioner"/>
     <extendWordSelectionHandler implementation="org.jetbrains.kotlin.idea.editor.wordSelection.KotlinSuperTypeSelectioner"/>
+    <extendWordSelectionHandler implementation="org.jetbrains.kotlin.idea.editor.wordSelection.KotlinBracketsSelectioner"/>
     <basicWordSelectionFilter implementation="org.jetbrains.kotlin.idea.editor.wordSelection.KotlinWordSelectionFilter"/>
 
     <typedHandler implementation="org.jetbrains.kotlin.idea.editor.KotlinTypedHandler"/>
@@ -523,6 +516,8 @@
     <copyPastePostProcessor implementation="org.jetbrains.kotlin.idea.conversion.copy.ConvertJavaCopyPasteProcessor"/>
     <copyPastePostProcessor implementation="org.jetbrains.kotlin.idea.conversion.copy.ConvertTextJavaCopyPasteProcessor"/>
     <copyPastePostProcessor implementation="org.jetbrains.kotlin.idea.codeInsight.KotlinCopyPasteReferenceProcessor"/>
+
+    <breadcrumbsInfoProvider implementation="org.jetbrains.kotlin.idea.codeInsight.KotlinBreadcrumbsInfoProvider"/>
 
     <lang.documentationProvider language="JAVA" implementationClass="org.jetbrains.kotlin.idea.KotlinQuickDocumentationProvider" order="first"/>
     <documentationProvider implementation="org.jetbrains.kotlin.idea.KotlinQuickDocumentationProvider"/>
@@ -555,7 +550,11 @@
 
     <gotoTargetRendererProvider id="JetGotoTargetRenderProvider" implementation="org.jetbrains.kotlin.idea.KotlinGotoTargetRenderProvider"
                                 order="first"/>
-    <elementDescriptionProvider implementation="org.jetbrains.kotlin.idea.findUsages.KotlinElementDescriptionProvider" order="first"/>
+    <elementDescriptionProvider
+        implementation="org.jetbrains.kotlin.idea.findUsages.KotlinElementDescriptionProvider"
+        order="first"/>
+    <elementDescriptionProvider
+        implementation="org.jetbrains.kotlin.idea.findUsages.KotlinNonCodeSearchElementDescriptionProvider"/>
     <highlightUsagesHandlerFactory implementation="org.jetbrains.kotlin.idea.highlighter.KotlinHighlightExitPointsHandlerFactory"/>
     <findUsagesHandlerFactory implementation="org.jetbrains.kotlin.idea.findUsages.KotlinFindUsagesHandlerFactory"/>
     <usageTypeProvider implementation="org.jetbrains.kotlin.idea.findUsages.KotlinUsageTypeProvider"/>
@@ -605,6 +604,7 @@
     <callHierarchyProvider
         language="kotlin"
         implementationClass="org.jetbrains.kotlin.idea.hierarchy.calls.KotlinCallHierarchyProvider" />
+    <hierarchy.referenceProcessor implementation="org.jetbrains.kotlin.idea.hierarchy.calls.KotlinCallReferenceProcessor"/>
     <methodHierarchyProvider
         language="kotlin"
         implementationClass="org.jetbrains.kotlin.idea.hierarchy.overrides.KotlinOverrideHierarchyProvider" />
@@ -678,6 +678,9 @@
                         serviceImplementation="org.jetbrains.kotlin.idea.editor.KotlinEditorOptions"/>
     <editorSmartKeysConfigurable instance="org.jetbrains.kotlin.idea.editor.KotlinEditorOptionsConfigurable"/>
 
+    <applicationService serviceInterface="org.jetbrains.kotlin.idea.refactoring.KotlinRefactoringSettings"
+                        serviceImplementation="org.jetbrains.kotlin.idea.refactoring.KotlinRefactoringSettings"/>
+
     <statementUpDownMover id="jetExpression"
                           implementation="org.jetbrains.kotlin.idea.codeInsight.upDownMover.KotlinExpressionMover"
                           order="before declaration" />
@@ -703,6 +706,14 @@
         order="first"
         implementationClass="org.jetbrains.kotlin.idea.refactoring.pullUp.JavaToKotlinPullUpHelperFactory"/>
 
+    <lang.refactoringSupport.classMembersRefactoringSupport
+        language="kotlin"
+        implementationClass="org.jetbrains.kotlin.idea.refactoring.memberInfo.KotlinClassMembersRefactoringSupport"/>
+
+    <refactoring.pushDown
+        language="kotlin"
+        implementationClass="org.jetbrains.kotlin.idea.refactoring.pushDown.JavaToKotlinPushDownDelegate"/>
+
     <problemFileHighlightFilter implementation="org.jetbrains.kotlin.idea.projectView.KotlinProblemFileHighlightFilter"/>
 
     <codeInsight.typeInfo language="kotlin" implementationClass="org.jetbrains.kotlin.idea.codeInsight.KotlinExpressionTypeProvider"/>
@@ -720,8 +731,12 @@
 
     <nameSuggestionProvider implementation="org.jetbrains.kotlin.idea.core.KotlinNameSuggestionProvider"/>
 
+    <usageToPsiElementProvider implementation="org.jetbrains.kotlin.idea.codeInsight.KotlinUsageToPsiElementProvider"/>
+
+    <facetType implementation="org.jetbrains.kotlin.idea.facet.KotlinFacetType"/>
+
     <intentionAction>
-      <className>org.jetbrains.kotlin.idea.intentions.IfNullToElvisIntention</className>
+      <className>org.jetbrains.kotlin.idea.intentions.FoldInitializerAndIfToElvisIntention</className>
       <category>Kotlin</category>
     </intentionAction>
 
@@ -1246,7 +1261,7 @@
     </intentionAction>
 
     <intentionAction>
-      <className>org.jetbrains.kotlin.idea.intentions.SimplifyForIntention</className>
+      <className>org.jetbrains.kotlin.idea.intentions.DestructureIntention</className>
       <category>Kotlin</category>
     </intentionAction>
 
@@ -1311,22 +1326,7 @@
     </intentionAction>
 
     <intentionAction>
-      <className>org.jetbrains.kotlin.idea.intentions.RemoveUnnecessaryLateinitIntention</className>
-      <category>Kotlin</category>
-    </intentionAction>
-
-    <intentionAction>
       <className>org.jetbrains.kotlin.idea.intentions.RemoveSingleExpressionStringTemplateIntention</className>
-      <category>Kotlin</category>
-    </intentionAction>
-
-    <intentionAction>
-      <className>org.jetbrains.kotlin.idea.intentions.AddBracesToWhenEntryIntention</className>
-      <category>Kotlin</category>
-    </intentionAction>
-
-    <intentionAction>
-      <className>org.jetbrains.kotlin.idea.intentions.RemoveBracesFromWhenEntryIntention</className>
       <category>Kotlin</category>
     </intentionAction>
 
@@ -1352,6 +1352,66 @@
 
     <intentionAction>
       <className>org.jetbrains.kotlin.idea.intentions.ConvertCamelCaseTestFunctionToSpacedIntention</className>
+      <category>Kotlin</category>
+    </intentionAction>
+
+    <intentionAction>
+      <className>org.jetbrains.kotlin.idea.intentions.ReplaceSingleLineLetIntention</className>
+      <category>Kotlin</category>
+    </intentionAction>
+
+    <intentionAction>
+      <className>org.jetbrains.kotlin.idea.intentions.copyConcatenatedStringToClipboard.CopyConcatenatedStringToClipboardIntention</className>
+      <category>Kotlin</category>
+    </intentionAction>
+
+    <intentionAction>
+      <className>org.jetbrains.kotlin.idea.intentions.ReplaceMathMaxWithCoerceAtLeastIntention</className>
+      <category>Kotlin</category>
+    </intentionAction>
+
+    <intentionAction>
+      <className>org.jetbrains.kotlin.idea.intentions.ReplaceMathMinWithCoerceAtMostIntention</className>
+      <category>Kotlin</category>
+    </intentionAction>
+
+    <intentionAction>
+      <className>org.jetbrains.kotlin.idea.intentions.ConvertPrimaryConstructorToSecondaryIntention</className>
+      <category>Kotlin</category>
+    </intentionAction>
+
+    <intentionAction>
+      <className>org.jetbrains.kotlin.idea.intentions.ConvertSecondaryConstructorToPrimaryIntention</className>
+      <category>Kotlin</category>
+    </intentionAction>
+
+    <intentionAction>
+      <className>org.jetbrains.kotlin.idea.intentions.ReplaceSizeCheckWithIsNotEmptyIntention</className>
+      <category>Kotlin</category>
+    </intentionAction>
+
+    <intentionAction>
+      <className>org.jetbrains.kotlin.idea.intentions.ReplaceSizeZeroCheckWithIsEmptyIntention</className>
+      <category>Kotlin</category>
+    </intentionAction>
+
+    <intentionAction>
+      <className>org.jetbrains.kotlin.idea.intentions.RemoveEmptyClassBodyIntention</className>
+      <category>Kotlin</category>
+    </intentionAction>
+
+    <intentionAction>
+      <className>org.jetbrains.kotlin.idea.intentions.ConvertEnumToSealedClassIntention</className>
+      <category>Kotlin</category>
+    </intentionAction>
+
+    <intentionAction>
+      <className>org.jetbrains.kotlin.idea.intentions.ConvertSealedClassToEnumIntention</className>
+      <category>Kotlin</category>
+    </intentionAction>
+
+    <intentionAction>
+      <className>org.jetbrains.kotlin.idea.intentions.RemoveRedundantCallsOfConversionMethodsIntention</className>
       <category>Kotlin</category>
     </intentionAction>
 
@@ -1411,7 +1471,7 @@
                      language="kotlin"
     />
 
-    <localInspection implementationClass="org.jetbrains.kotlin.idea.intentions.IfNullToElvisInspection"
+    <localInspection implementationClass="org.jetbrains.kotlin.idea.intentions.FoldInitializerAndIfToElvisInspection"
                      displayName="If-Null return/break/... foldable to '?:'"
                      groupName="Kotlin"
                      enabledByDefault="true"
@@ -1518,6 +1578,14 @@
                      language="kotlin"
     />
 
+    <localInspection implementationClass="org.jetbrains.kotlin.idea.inspections.UnsafeCastFromDynamicInspection"
+                     displayName="Implicit (unsafe) cast from dynamic type"
+                     groupName="Kotlin"
+                     enabledByDefault="true"
+                     level="INFO"
+                     language="kotlin"
+    />
+
     <localInspection implementationClass="org.jetbrains.kotlin.idea.inspections.OverridingDeprecatedMemberInspection"
                      shortName="OverridingDeprecatedMember"
                      displayName="Overriding deprecated member"
@@ -1608,12 +1676,12 @@
                      language="kotlin"
     />
 
-    <localInspection implementationClass="org.jetbrains.kotlin.idea.intentions.SimplifyForInspection"
-                     displayName="'for' that can be simplified using destructing declaration"
+    <localInspection implementationClass="org.jetbrains.kotlin.idea.intentions.DestructureInspection"
+                     displayName="Use destructuring declaration"
                      groupName="Kotlin"
                      enabledByDefault="true"
                      cleanupTool="false"
-                     level="WEAK WARNING"
+                     level="INFO"
                      language="kotlin"
     />
 
@@ -1720,20 +1788,12 @@
                      displayName="Can be replaced with function reference"
                      groupName="Kotlin"
                      enabledByDefault="true"
-                     level="WEAK WARNING"
+                     level="INFO"
                      language="kotlin"
     />
 
     <localInspection implementationClass="org.jetbrains.kotlin.idea.intentions.RemoveSetterParameterTypeInspection"
                      displayName="Redundant setter parameter type"
-                     groupName="Kotlin"
-                     enabledByDefault="true"
-                     level="WARNING"
-                     language="kotlin"
-    />
-
-    <localInspection implementationClass="org.jetbrains.kotlin.idea.intentions.RemoveUnnecessaryLateinitInspection"
-                     displayName="Unnecessary lateinit"
                      groupName="Kotlin"
                      enabledByDefault="true"
                      level="WARNING"
@@ -1774,6 +1834,55 @@
 
     <localInspection implementationClass="org.jetbrains.kotlin.idea.intentions.ReplaceArrayEqualityOpWithArraysEqualsInspection"
                      displayName="Replace '==' with 'Arrays.equals'"
+                     groupName="Kotlin"
+                     enabledByDefault="true"
+                     level="WARNING"
+                     language="kotlin"
+    />
+
+    <localInspection implementationClass="org.jetbrains.kotlin.idea.intentions.ReplaceSingleLineLetInspection"
+                     displayName="Replace single line .let"
+                     groupName="Kotlin"
+                     enabledByDefault="true"
+                     level="WARNING"
+                     language="kotlin"
+    />
+
+    <localInspection implementationClass="org.jetbrains.kotlin.idea.intentions.ConvertSecondaryConstructorToPrimaryInspection"
+                     displayName="Convert to primary constructor"
+                     groupName="Kotlin"
+                     enabledByDefault="true"
+                     level="WARNING"
+                     language="kotlin"
+    />
+
+    <localInspection implementationClass="org.jetbrains.kotlin.idea.intentions.ReplaceSizeCheckWithIsNotEmptyInspection"
+                     displayName="Replace size check with 'isNotEmpty()'"
+                     groupName="Kotlin"
+                     enabledByDefault="true"
+                     level="WARNING"
+                     language="kotlin"
+    />
+
+    <localInspection implementationClass="org.jetbrains.kotlin.idea.intentions.ReplaceSizeZeroCheckWithIsEmptyInspection"
+                     displayName="Replace size zero check with 'isEmpty()'"
+                     groupName="Kotlin"
+                     enabledByDefault="true"
+                     level="WARNING"
+                     language="kotlin"
+    />
+
+    <localInspection implementationClass="org.jetbrains.kotlin.idea.intentions.RemoveEmptyClassBodyInspection"
+                     displayName="Replace empty class body"
+                     groupName="Kotlin"
+                     enabledByDefault="true"
+                     cleanupTool="true"
+                     level="INFO"
+                     language="kotlin"
+    />
+
+    <localInspection implementationClass="org.jetbrains.kotlin.idea.intentions.RemoveRedundantCallsOfConversionMethodsInspection"
+                     displayName="Remove redundant calls of conversion methods"
                      groupName="Kotlin"
                      enabledByDefault="true"
                      level="WARNING"

@@ -20,6 +20,8 @@ import com.google.common.base.Predicates;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.util.concurrency.AppExecutorUtil;
+import com.intellij.util.concurrency.AppScheduledExecutorService;
 import com.sampullara.cli.Args;
 import kotlin.Pair;
 import kotlin.collections.ArraysKt;
@@ -33,10 +35,7 @@ import org.jetbrains.kotlin.cli.common.messages.*;
 import org.jetbrains.kotlin.cli.jvm.K2JVMCompiler;
 import org.jetbrains.kotlin.cli.jvm.compiler.CompileEnvironmentException;
 import org.jetbrains.kotlin.cli.jvm.compiler.CompilerJarLocator;
-import org.jetbrains.kotlin.config.CommonConfigurationKeys;
-import org.jetbrains.kotlin.config.CompilerConfiguration;
-import org.jetbrains.kotlin.config.LanguageVersion;
-import org.jetbrains.kotlin.config.Services;
+import org.jetbrains.kotlin.config.*;
 import org.jetbrains.kotlin.progress.CompilationCanceledException;
 import org.jetbrains.kotlin.progress.CompilationCanceledStatus;
 import org.jetbrains.kotlin.progress.ProgressIndicatorAndCompilationCanceledStatus;
@@ -249,25 +248,56 @@ public abstract class CLICompiler<A extends CommonCompilerArguments> {
             configuration.put(CLIConfigurationKeys.COMPILER_JAR_LOCATOR, locator);
         }
 
-        if (arguments.languageVersion != null) {
-            LanguageVersion languageFeatureSettings = LanguageVersion.fromVersionString(arguments.languageVersion);
-            if (languageFeatureSettings != null) {
-                configuration.put(CommonConfigurationKeys.LANGUAGE_FEATURE_SETTINGS, languageFeatureSettings);
+        LanguageVersion languageVersion = parseVersion(configuration, arguments.languageVersion, "language");
+        LanguageVersion apiVersion = parseVersion(configuration, arguments.apiVersion, "API");
+        if (languageVersion != null || apiVersion != null) {
+            if (languageVersion == null) {
+                // If only "-api-version" is specified, language version is assumed to be the latest
+                languageVersion = LanguageVersion.LATEST;
             }
-            else {
-                List<String> versionStrings = ArraysKt.map(LanguageVersion.values(), new Function1<LanguageVersion, String>() {
-                    @Override
-                    public String invoke(LanguageVersion version) {
-                        return version.getVersionString();
-                    }
-                });
-                String message = "Unknown language version: " + arguments.languageVersion + "\n" +
-                                 "Supported language versions: " + StringsKt.join(versionStrings, ", ");
+            if (apiVersion == null) {
+                // If only "-language-version" is specified, API version is assumed to be equal to the language version
+                // (API version cannot be greater than the language version)
+                apiVersion = languageVersion;
+            }
+
+            if (apiVersion.compareTo(languageVersion) > 0) {
                 configuration.getNotNull(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY).report(
-                        CompilerMessageSeverity.ERROR, message, CompilerMessageLocation.NO_LOCATION
+                        CompilerMessageSeverity.ERROR,
+                        "-api-version (" + apiVersion.getVersionString() + ") cannot be greater than " +
+                        "-language-version (" + languageVersion.getVersionString() + ")",
+                        CompilerMessageLocation.NO_LOCATION
                 );
             }
+
+            configuration.put(CommonConfigurationKeys.LANGUAGE_VERSION_SETTINGS,
+                              new LanguageVersionSettingsImpl(languageVersion, ApiVersion.createByLanguageVersion(apiVersion)));
         }
+    }
+
+    private static LanguageVersion parseVersion(
+            @NotNull CompilerConfiguration configuration, @Nullable String value, @NotNull String versionOf
+    ) {
+        if (value == null) return null;
+
+        LanguageVersion version = LanguageVersion.fromVersionString(value);
+        if (version != null) {
+            return version;
+        }
+
+        List<String> versionStrings = ArraysKt.map(LanguageVersion.values(), new Function1<LanguageVersion, String>() {
+            @Override
+            public String invoke(LanguageVersion version) {
+                return version.getVersionString();
+            }
+        });
+        String message = "Unknown " + versionOf + " version: " + value + "\n" +
+                         "Supported " + versionOf + " versions: " + StringsKt.join(versionStrings, ", ");
+        configuration.getNotNull(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY).report(
+                CompilerMessageSeverity.ERROR, message, CompilerMessageLocation.NO_LOCATION
+        );
+
+        return null;
     }
 
     protected abstract void setupPlatformSpecificArgumentsAndServices(
@@ -306,9 +336,16 @@ public abstract class CLICompiler<A extends CommonCompilerArguments> {
         // We depend on swing (indirectly through PSI or something), so we want to declare headless mode,
         // to avoid accidentally starting the UI thread
         System.setProperty("java.awt.headless", "true");
-        ExitCode exitCode = doMainNoExit(compiler, args);
-        if (exitCode != OK) {
-            System.exit(exitCode.getCode());
+        try {
+            ExitCode exitCode = doMainNoExit(compiler, args);
+
+            if (exitCode != OK) {
+                System.exit(exitCode.getCode());
+            }
+        }
+        finally {
+            AppScheduledExecutorService service = (AppScheduledExecutorService) AppExecutorUtil.getAppScheduledExecutorService();
+            service.shutdownAppScheduledExecutorService();
         }
     }
 

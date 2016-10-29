@@ -18,8 +18,8 @@ package org.jetbrains.kotlin.js.translate.context
 
 import org.jetbrains.kotlin.descriptors.*
 import com.google.dart.compiler.backend.js.ast.JsName
-import org.jetbrains.kotlin.js.translate.utils.ManglingUtils.getSuggestedName
 import com.google.dart.compiler.backend.js.ast.JsScope
+import org.jetbrains.kotlin.js.naming.NameSuggestion
 import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.DescriptorUtils.*
 import org.jetbrains.kotlin.resolve.calls.util.FakeCallableDescriptorForObject
@@ -65,6 +65,7 @@ class UsageTracker(
     }
 
     private fun captureIfNeed(descriptor: DeclarationDescriptor?) {
+
         if (descriptor == null || isCaptured(descriptor) || !isInLocalDeclaration() ||
             isAncestor(containingDescriptor, descriptor, /* strict = */ true) ||
             isReceiverAncestor(descriptor) || isSingletonReceiver(descriptor)
@@ -104,8 +105,16 @@ class UsageTracker(
         if (descriptor !is ReceiverParameterDescriptor) return false
         if (containingDescriptor !is ClassDescriptor && containingDescriptor !is ConstructorDescriptor) return false
 
+        // Class in which we are trying to capture variable
         val containingClass = getParentOfType(containingDescriptor, ClassDescriptor::class.java, false) ?: return false
+
+        // Class which instance we are trying to capture
         val currentClass = descriptor.containingDeclaration as? ClassDescriptor ?: return false
+
+        // We always capture enclosing class if it's not outer (i.e. we are capturing members of enclosing class to a local class)
+        if (containingClass != currentClass && containingClass.containingDeclaration !is ClassDescriptor) {
+            return false
+        }
 
         for (outerDeclaration in generateSequence(containingClass) { it.containingDeclaration as? ClassDescriptor }) {
             if (DescriptorUtils.isSubclass(outerDeclaration, currentClass)) return true
@@ -160,7 +169,10 @@ class UsageTracker(
             is TypeParameterDescriptor -> Namer.isInstanceSuggestedName(this)
 
             // Append 'closure$' prefix to avoid name clash between closure and member fields in case of local classes
-            else -> "closure\$${getSuggestedName(this)}"
+            else -> {
+                val mangled = NameSuggestion().suggest(this)!!.names.last()
+                "closure\$$mangled"
+            }
         }
 
         return scope.declareFreshName(suggestedName)

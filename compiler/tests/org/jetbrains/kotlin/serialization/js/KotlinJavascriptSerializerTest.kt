@@ -30,6 +30,7 @@ import org.jetbrains.kotlin.js.config.JSConfigurationKeys
 import org.jetbrains.kotlin.js.config.LibrarySourcesConfig
 import org.jetbrains.kotlin.js.resolve.JsPlatform
 import org.jetbrains.kotlin.jvm.compiler.LoadDescriptorUtil.TEST_PACKAGE_FQNAME
+import org.jetbrains.kotlin.serialization.deserialization.DeserializationConfiguration
 import org.jetbrains.kotlin.storage.LockBasedStorageManager
 import org.jetbrains.kotlin.test.KotlinTestUtils
 import org.jetbrains.kotlin.test.TestCaseWithTmpdir
@@ -84,12 +85,13 @@ class KotlinJavascriptSerializerTest : TestCaseWithTmpdir() {
     }
 
     private fun deserialize(metaFile: File): ModuleDescriptorImpl {
-        val module = KotlinTestUtils.createEmptyModule("<${KotlinTestUtils.TEST_MODULE_NAME}>", JsPlatform, JsPlatform.builtIns)
+        val module = KotlinTestUtils.createEmptyModule("<${KotlinTestUtils.TEST_MODULE_NAME}>", JsPlatform.builtIns)
         val metadata = KotlinJavascriptMetadataUtils.loadMetadata(metaFile)
         assert(metadata.size == 1)
 
-        val provider = KotlinJavascriptSerializationUtil.readModule(metadata[0].body, LockBasedStorageManager(), module).data
-                .sure { "No package fragment provider was created" }
+        val provider = KotlinJavascriptSerializationUtil.readModule(
+                metadata.single().body, LockBasedStorageManager(), module, DeserializationConfiguration.Default
+        ).data.sure { "No package fragment provider was created" }
 
         module.initialize(provider)
         module.setDependencies(module, module.builtIns.builtInsModule)

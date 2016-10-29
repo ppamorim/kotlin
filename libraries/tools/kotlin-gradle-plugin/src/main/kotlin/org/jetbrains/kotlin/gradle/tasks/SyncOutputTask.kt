@@ -23,6 +23,7 @@ import org.gradle.api.tasks.OutputFiles
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.incremental.IncrementalTaskInputs
 import org.gradle.api.tasks.incremental.InputFileDetails
+import org.jetbrains.kotlin.bytecode.AnnotationsRemover
 import org.jetbrains.kotlin.gradle.plugin.kotlinDebug
 import java.io.File
 import java.io.ObjectInputStream
@@ -52,16 +53,29 @@ import kotlin.properties.Delegates
  * if it's timestamp now is newer than when we copied it
  * (assuming it was modified by javac when class was converted to java).
  */
-open class SyncOutputTask : DefaultTask() {
+internal open class SyncOutputTask : DefaultTask() {
     @get:InputFiles
     var kotlinOutputDir: File by Delegates.notNull()
     var javaOutputDir: File by Delegates.notNull()
+    var kotlinTask: KotlinCompile by Delegates.notNull()
+    private val sourceAnnotations: Set<String> by lazy {
+        kotlinTask.sourceAnnotationsRegistry?.annotations ?: emptySet()
+    }
+    private val annotationsRemover by lazy {
+        AnnotationsRemover(sourceAnnotations)
+    }
 
     // OutputDirectory needed for task to be incremental
     @get:OutputDirectory
-    val workingDir = File(project.buildDir, name).apply { mkdirs() }
-    private val timestampsFile = File(workingDir, TIMESTAMP_FILE_NAME)
-    private val timestamps: MutableMap<File, Long> = readTimestamps(timestampsFile)
+    val workingDir: File by lazy {
+        File(kotlinTask.taskBuildDirectory, "sync").apply { mkdirs() }
+    }
+    private val timestampsFile: File by lazy {
+        File(workingDir, TIMESTAMP_FILE_NAME)
+    }
+    private val timestamps: MutableMap<File, Long> by lazy {
+        readTimestamps(timestampsFile)
+    }
 
     @Suppress("unused")
     @get:OutputFiles
@@ -130,7 +144,14 @@ open class SyncOutputTask : DefaultTask() {
         if (!fileInKotlinDir.isFile) return
 
         fileInJavaDir.parentFile.mkdirs()
-        fileInKotlinDir.copyTo(fileInJavaDir, overwrite = true)
+        if (sourceAnnotations.isNotEmpty() && fileInKotlinDir.extension.toLowerCase() == "class") {
+            logger.kotlinDebug { "Removing source annotations from class: $fileInKotlinDir" }
+            annotationsRemover.transformClassFile(fileInKotlinDir, fileInJavaDir)
+        }
+        else {
+            fileInKotlinDir.copyTo(fileInJavaDir, overwrite = true)
+        }
+
         timestamps[fileInJavaDir] = fileInJavaDir.lastModified()
 
         logger.kotlinDebug {

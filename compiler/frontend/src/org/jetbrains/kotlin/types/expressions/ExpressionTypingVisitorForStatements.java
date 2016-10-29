@@ -118,6 +118,8 @@ public class ExpressionTypingVisitorForStatements extends ExpressionTypingVisito
         scope.addClassifierDescriptor(typeAliasDescriptor);
         ForceResolveUtil.forceResolveAllContents(typeAliasDescriptor);
 
+        facade.getComponents().declarationsCheckerBuilder.withTrace(context.trace).checkLocalTypeAliasDeclaration(typeAlias, typeAliasDescriptor);
+
         return TypeInfoFactoryKt.createTypeInfo(components.dataFlowAnalyzer.checkStatementType(typeAlias, context), context);
     }
 
@@ -134,7 +136,7 @@ public class ExpressionTypingVisitorForStatements extends ExpressionTypingVisito
                 facade, initializer, context.replaceExpectedType(NO_EXPECTED_TYPE).replaceContextDependency(INDEPENDENT)) : null;
 
         components.destructuringDeclarationResolver
-                .defineLocalVariablesFromMultiDeclaration(scope, multiDeclaration, expressionReceiver, initializer, context);
+                .defineLocalVariablesFromDestructuringDeclaration(scope, multiDeclaration, expressionReceiver, initializer, context);
         components.modifiersChecker.withTrace(context.trace).checkModifiersForDestructuringDeclaration(multiDeclaration);
         components.identifierChecker.checkDeclaration(multiDeclaration, context.trace);
 
@@ -309,10 +311,7 @@ public class ExpressionTypingVisitorForStatements extends ExpressionTypingVisito
                 contextWithExpectedType.replaceExpectedType(NO_EXPECTED_TYPE).replaceScope(scope).replaceContextDependency(INDEPENDENT);
         KtExpression leftOperand = expression.getLeft();
         if (leftOperand instanceof KtAnnotatedExpression) {
-            // We will lose all annotations during deparenthesizing, so we have to resolve them right now
-            components.annotationResolver.resolveAnnotationsWithArguments(
-                    scope, ((KtAnnotatedExpression) leftOperand).getAnnotationEntries(), context.trace
-            );
+            basic.resolveAnnotationsOnExpression((KtAnnotatedExpression) leftOperand, context);
         }
         KtExpression left = deparenthesize(leftOperand);
         KtExpression right = expression.getRight();

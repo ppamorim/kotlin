@@ -564,6 +564,12 @@ public class KotlinEvaluateExpressionTestGenerated extends AbstractKotlinEvaluat
                 doSingleBreakpointTest(fileName);
             }
 
+            @TestMetadata("delegatedPropertyInClassWithToString.kt")
+            public void testDelegatedPropertyInClassWithToString() throws Exception {
+                String fileName = KotlinTestUtils.navigationMetadata("idea/testData/debugger/tinyApp/src/evaluate/singleBreakpoint/frame/delegatedPropertyInClassWithToString.kt");
+                doSingleBreakpointTest(fileName);
+            }
+
             @TestMetadata("delegatedPropertyInClassWoRenderer.kt")
             public void testDelegatedPropertyInClassWoRenderer() throws Exception {
                 String fileName = KotlinTestUtils.navigationMetadata("idea/testData/debugger/tinyApp/src/evaluate/singleBreakpoint/frame/delegatedPropertyInClassWoRenderer.kt");
@@ -789,6 +795,12 @@ public class KotlinEvaluateExpressionTestGenerated extends AbstractKotlinEvaluat
                 KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("idea/testData/debugger/tinyApp/src/evaluate/singleBreakpoint/lambdas"), Pattern.compile("^(.+)\\.kt$"), true);
             }
 
+            @TestMetadata("destructuringParam.kt")
+            public void testDestructuringParam() throws Exception {
+                String fileName = KotlinTestUtils.navigationMetadata("idea/testData/debugger/tinyApp/src/evaluate/singleBreakpoint/lambdas/destructuringParam.kt");
+                doSingleBreakpointTest(fileName);
+            }
+
             @TestMetadata("inlineFunctionalExpression.kt")
             public void testInlineFunctionalExpression() throws Exception {
                 String fileName = KotlinTestUtils.navigationMetadata("idea/testData/debugger/tinyApp/src/evaluate/singleBreakpoint/lambdas/inlineFunctionalExpression.kt");
@@ -828,6 +840,12 @@ public class KotlinEvaluateExpressionTestGenerated extends AbstractKotlinEvaluat
             @TestMetadata("twoLambdasOnOneLineSecond.kt")
             public void testTwoLambdasOnOneLineSecond() throws Exception {
                 String fileName = KotlinTestUtils.navigationMetadata("idea/testData/debugger/tinyApp/src/evaluate/singleBreakpoint/lambdas/twoLambdasOnOneLineSecond.kt");
+                doSingleBreakpointTest(fileName);
+            }
+
+            @TestMetadata("underscoreNames.kt")
+            public void testUnderscoreNames() throws Exception {
+                String fileName = KotlinTestUtils.navigationMetadata("idea/testData/debugger/tinyApp/src/evaluate/singleBreakpoint/lambdas/underscoreNames.kt");
                 doSingleBreakpointTest(fileName);
             }
         }

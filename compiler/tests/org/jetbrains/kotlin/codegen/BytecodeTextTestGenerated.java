@@ -607,6 +607,12 @@ public class BytecodeTextTestGenerated extends AbstractBytecodeTextTest {
             KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/codegen/bytecodeText/coercionToUnitOptimization"), Pattern.compile("^(.+)\\.kt$"), true);
         }
 
+        @TestMetadata("kt14360.kt")
+        public void testKt14360() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/codegen/bytecodeText/coercionToUnitOptimization/kt14360.kt");
+            doTest(fileName);
+        }
+
         @TestMetadata("nopInlineFuns.kt")
         public void testNopInlineFuns() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/codegen/bytecodeText/coercionToUnitOptimization/nopInlineFuns.kt");
@@ -889,6 +895,12 @@ public class BytecodeTextTestGenerated extends AbstractBytecodeTextTest {
             doTest(fileName);
         }
 
+        @TestMetadata("kt14357.kt")
+        public void testKt14357() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/codegen/bytecodeText/deadCodeElimination/kt14357.kt");
+            doTest(fileName);
+        }
+
         @TestMetadata("lastReturn.kt")
         public void testLastReturn() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/codegen/bytecodeText/deadCodeElimination/lastReturn.kt");
@@ -1060,6 +1072,18 @@ public class BytecodeTextTestGenerated extends AbstractBytecodeTextTest {
         @TestMetadata("inlineReturnsNothing3.kt")
         public void testInlineReturnsNothing3() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/codegen/bytecodeText/inline/inlineReturnsNothing3.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("linenumberForNoParametersArgumentCallInExpression.kt")
+        public void testLinenumberForNoParametersArgumentCallInExpression() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/codegen/bytecodeText/inline/linenumberForNoParametersArgumentCallInExpression.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("linenumberForOneParametersArgumentCall.kt")
+        public void testLinenumberForOneParametersArgumentCall() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/codegen/bytecodeText/inline/linenumberForOneParametersArgumentCall.kt");
             doTest(fileName);
         }
 
@@ -1288,6 +1312,27 @@ public class BytecodeTextTestGenerated extends AbstractBytecodeTextTest {
         @TestMetadata("optimizedMultifileClassFacadeMethods.kt")
         public void testOptimizedMultifileClassFacadeMethods() throws Exception {
             String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/codegen/bytecodeText/multifileClasses/optimizedMultifileClassFacadeMethods.kt");
+            doTest(fileName);
+        }
+    }
+
+    @TestMetadata("compiler/testData/codegen/bytecodeText/ranges")
+    @TestDataPath("$PROJECT_ROOT")
+    @RunWith(JUnit3RunnerWithInners.class)
+    public static class Ranges extends AbstractBytecodeTextTest {
+        public void testAllFilesPresentInRanges() throws Exception {
+            KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/codegen/bytecodeText/ranges"), Pattern.compile("^(.+)\\.kt$"), true);
+        }
+
+        @TestMetadata("inNonMatchingRange.kt")
+        public void testInNonMatchingRange() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/codegen/bytecodeText/ranges/inNonMatchingRange.kt");
+            doTest(fileName);
+        }
+
+        @TestMetadata("inOptimizableRange.kt")
+        public void testInOptimizableRange() throws Exception {
+            String fileName = KotlinTestUtils.navigationMetadata("compiler/testData/codegen/bytecodeText/ranges/inOptimizableRange.kt");
             doTest(fileName);
         }
     }

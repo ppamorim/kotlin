@@ -38,9 +38,9 @@ import com.intellij.rt.execution.junit.FileComparisonFailure;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.indexing.FileBasedIndex;
 import kotlin.collections.CollectionsKt;
-import kotlin.text.StringsKt;
 import kotlin.io.FilesKt;
 import kotlin.jvm.functions.Function1;
+import kotlin.text.StringsKt;
 import org.apache.commons.lang.SystemUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -141,6 +141,7 @@ public abstract class AbstractQuickFixTest extends KotlinLightQuickFixTestCase {
                 List<String> fixtureClasses = Collections.emptyList();
                 try {
                     fileText = FileUtil.loadFile(testFile, CharsetToolkit.UTF8_CHARSET);
+                    assertTrue("\"<caret>\" is missing in file \"" + testName + "\"", fileText.contains("<caret>"));
 
                     fixtureClasses = InTextDirectivesUtils.findListWithPrefixes(fileText, "// FIXTURE_CLASS: ");
                     for (String fixtureClass : fixtureClasses) {
@@ -309,15 +310,18 @@ public abstract class AbstractQuickFixTest extends KotlinLightQuickFixTestCase {
         if (intention != null) return intention;
 
         // Support warning suppression
+        int caretOffset = myEditor.getCaretModel().getOffset();
         for (HighlightInfo highlight : doHighlighting()) {
-            ProblemGroup group = highlight.getProblemGroup();
-            if (group instanceof SuppressableProblemGroup) {
-                SuppressableProblemGroup problemGroup = (SuppressableProblemGroup) group;
-                PsiElement at = getFile().findElementAt(highlight.getActualStartOffset());
-                SuppressIntentionAction[] actions = problemGroup.getSuppressActions(at);
-                for (SuppressIntentionAction action : actions) {
-                    if (action.getText().equals(text)) {
-                        return action;
+            if (highlight.startOffset <= caretOffset && caretOffset <= highlight.endOffset) {
+                ProblemGroup group = highlight.getProblemGroup();
+                if (group instanceof SuppressableProblemGroup) {
+                    SuppressableProblemGroup problemGroup = (SuppressableProblemGroup) group;
+                    PsiElement at = getFile().findElementAt(highlight.getActualStartOffset());
+                    SuppressIntentionAction[] actions = problemGroup.getSuppressActions(at);
+                    for (SuppressIntentionAction action : actions) {
+                        if (action.getText().equals(text)) {
+                            return action;
+                        }
                     }
                 }
             }

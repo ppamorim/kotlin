@@ -17,31 +17,19 @@
 package org.jetbrains.kotlin.resolve.jvm.checkers
 
 import com.intellij.psi.PsiElement
+import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.config.LanguageFeature
-import org.jetbrains.kotlin.config.LanguageFeatureSettings
+import org.jetbrains.kotlin.config.LanguageVersionSettings
 import org.jetbrains.kotlin.descriptors.CallableMemberDescriptor
 import org.jetbrains.kotlin.descriptors.DeclarationDescriptor
 import org.jetbrains.kotlin.diagnostics.DiagnosticSink
 import org.jetbrains.kotlin.diagnostics.Errors
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.load.java.descriptors.JavaCallableMemberDescriptor
-import org.jetbrains.kotlin.load.java.isFromBuiltins
 import org.jetbrains.kotlin.psi.KtDeclaration
 import org.jetbrains.kotlin.resolve.BindingContext
-import org.jetbrains.kotlin.resolve.DeclarationChecker
-import org.jetbrains.kotlin.resolve.calls.checkers.CallChecker
-import org.jetbrains.kotlin.resolve.calls.checkers.CallCheckerContext
-import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall
+import org.jetbrains.kotlin.resolve.checkers.DeclarationChecker
 import org.jetbrains.kotlin.resolve.descriptorUtil.overriddenTreeUniqueAsSequence
-
-object AdditionalBuiltInsMembersCallChecker : CallChecker {
-    override fun check(resolvedCall: ResolvedCall<*>, reportOn: PsiElement, context: CallCheckerContext) {
-        if (context.languageFeatureSettings.supportsFeature(LanguageFeature.AdditionalBuiltInsMembers)) return
-        val resultingDescriptor = resolvedCall.resultingDescriptor as? CallableMemberDescriptor ?: return
-
-        reportErrorIfAdditionalBuiltinDescriptor(resultingDescriptor, context.trace, reportOn)
-    }
-}
 
 object AdditionalBuiltInsMemberOverrideDeclarationChecker : DeclarationChecker {
     override fun check(
@@ -49,9 +37,9 @@ object AdditionalBuiltInsMemberOverrideDeclarationChecker : DeclarationChecker {
             descriptor: DeclarationDescriptor,
             diagnosticHolder: DiagnosticSink,
             bindingContext: BindingContext,
-            languageFeatureSettings: LanguageFeatureSettings
+            languageVersionSettings: LanguageVersionSettings
     ) {
-        if (languageFeatureSettings.supportsFeature(LanguageFeature.AdditionalBuiltInsMembers)) return
+        if (languageVersionSettings.supportsFeature(LanguageFeature.AdditionalBuiltInsMembers)) return
         val resultingDescriptor = descriptor as? CallableMemberDescriptor ?: return
         val overrideKeyword = declaration.modifierList?.getModifier(KtTokens.OVERRIDE_KEYWORD) ?: return
 
@@ -65,10 +53,9 @@ private fun reportErrorIfAdditionalBuiltinDescriptor(
         diagnosticHolder: DiagnosticSink,
         reportOn: PsiElement
 ) {
-    @Suppress("UNCHECKED_CAST")
-    val overriddenTree = descriptor.overriddenTreeUniqueAsSequence(useOriginal = true) as Sequence<CallableMemberDescriptor>
+    val overriddenTree = descriptor.overriddenTreeUniqueAsSequence(useOriginal = true)
 
-    if (overriddenTree.any { it.isFromBuiltins() && it is JavaCallableMemberDescriptor }) {
+    if (overriddenTree.any { KotlinBuiltIns.isBuiltIn(it) && it is JavaCallableMemberDescriptor }) {
         diagnosticHolder.report(Errors.UNSUPPORTED_FEATURE.on(reportOn, LanguageFeature.AdditionalBuiltInsMembers))
     }
 }

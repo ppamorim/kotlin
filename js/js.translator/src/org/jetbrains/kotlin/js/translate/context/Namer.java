@@ -25,22 +25,26 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.kotlin.descriptors.CallableDescriptor;
 import org.jetbrains.kotlin.descriptors.ClassDescriptor;
+import org.jetbrains.kotlin.descriptors.SimpleFunctionDescriptor;
 import org.jetbrains.kotlin.descriptors.TypeParameterDescriptor;
 import org.jetbrains.kotlin.idea.KotlinLanguage;
+import org.jetbrains.kotlin.incremental.components.NoLookupLocation;
+import org.jetbrains.kotlin.js.naming.NameSuggestion;
+import org.jetbrains.kotlin.js.naming.SuggestedName;
 import org.jetbrains.kotlin.js.resolve.JsPlatform;
 import org.jetbrains.kotlin.name.FqName;
 import org.jetbrains.kotlin.name.FqNameUnsafe;
+import org.jetbrains.kotlin.name.Name;
 import org.jetbrains.kotlin.resolve.DescriptorUtils;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
 import static com.google.dart.compiler.backend.js.ast.JsScopesKt.JsObjectScope;
 import static org.jetbrains.kotlin.js.translate.utils.JsAstUtils.pureFqn;
 import static org.jetbrains.kotlin.js.translate.utils.JsDescriptorUtils.getModuleName;
-import static org.jetbrains.kotlin.js.translate.utils.ManglingUtils.getStableMangledNameForDescriptor;
-import static org.jetbrains.kotlin.js.translate.utils.ManglingUtils.getSuggestedName;
 
 /**
  * Encapsulates different types of constants and naming conventions.
@@ -62,7 +66,9 @@ public final class Namer {
     public static final String PRIMITIVE_COMPARE_TO = "primitiveCompareTo";
     public static final String IS_CHAR = "isChar";
     public static final String IS_NUMBER = "isNumber";
-    public static final String IS_CHAR_SEQUENCE = "isCharSequence";
+    private static final String IS_CHAR_SEQUENCE = "isCharSequence";
+    public static final String GET_KCLASS = "getKClass";
+    public static final String GET_KCLASS_FROM_EXPRESSION = "getKClassFromExpression";
 
     public static final String CALLEE_NAME = "$fun";
 
@@ -128,7 +134,7 @@ public final class Namer {
             qualifier = fqNameParent.asString();
         }
 
-        String mangledName = getSuggestedName(functionDescriptor);
+        String mangledName = new NameSuggestion().suggest(functionDescriptor).getNames().get(0);
         return StringUtil.join(Arrays.asList(moduleName, qualifier, mangledName), ".");
     }
 
@@ -182,7 +188,7 @@ public final class Namer {
     }
 
     @NotNull
-    public static JsNameRef getRefToPrototype(@NotNull JsExpression classOrTraitExpression) {
+    private static JsNameRef getRefToPrototype(@NotNull JsExpression classOrTraitExpression) {
         return pureFqn(getPrototypeName(), classOrTraitExpression);
     }
 
@@ -239,17 +245,17 @@ public final class Namer {
     @NotNull
     private final JsObjectScope kotlinScope;
     @NotNull
-    private final JsName className;
+    private final JsName classCreationMethodReference;
     @NotNull
-    private final JsName enumClassName;
+    private final JsName enumClassCreationMethodName;
     @NotNull
-    private final JsName traitName;
+    private final JsName interfaceCreationMethodName;
     @NotNull
     private final JsExpression definePackage;
     @NotNull
     private final JsExpression defineRootPackage;
     @NotNull
-    private final JsName objectName;
+    private final JsName objectCreationMethodName;
     @NotNull
     private final JsName callableRefForMemberFunctionName;
     @NotNull
@@ -272,12 +278,9 @@ public final class Namer {
     @NotNull
     private final JsName isTypeName;
 
-    @NotNull
-    private final JsExpression modulesMap;
-
     private Namer(@NotNull JsScope rootScope) {
         kotlinScope = JsObjectScope(rootScope, "Kotlin standard object");
-        traitName = kotlinScope.declareName(TRAIT_OBJECT_NAME);
+        interfaceCreationMethodName = kotlinScope.declareName(TRAIT_OBJECT_NAME);
 
         definePackage = kotlin("definePackage");
         defineRootPackage = kotlin("defineRootPackage");
@@ -285,9 +288,9 @@ public final class Namer {
         callGetProperty = kotlin("callGetter");
         callSetProperty = kotlin("callSetter");
 
-        className = kotlinScope.declareName(CLASS_OBJECT_NAME);
-        enumClassName = kotlinScope.declareName(ENUM_CLASS_OBJECT_NAME);
-        objectName = kotlinScope.declareName(OBJECT_OBJECT_NAME);
+        classCreationMethodReference = kotlinScope.declareName(CLASS_OBJECT_NAME);
+        enumClassCreationMethodName = kotlinScope.declareName(ENUM_CLASS_OBJECT_NAME);
+        objectCreationMethodName = kotlinScope.declareName(OBJECT_OBJECT_NAME);
         callableRefForMemberFunctionName = kotlinScope.declareName(CALLABLE_REF_FOR_MEMBER_FUNCTION_NAME);
         callableRefForExtensionFunctionName = kotlinScope.declareName(CALLABLE_REF_FOR_EXTENSION_FUNCTION_NAME);
         callableRefForLocalExtensionFunctionName = kotlinScope.declareName(CALLABLE_REF_FOR_LOCAL_EXTENSION_FUNCTION_NAME);
@@ -297,22 +300,17 @@ public final class Namer {
         callableRefForExtensionProperty = kotlinScope.declareName(CALLABLE_REF_FOR_EXTENSION_PROPERTY);
 
         isTypeName = kotlinScope.declareName("isType");
-        modulesMap = kotlin("modules");
     }
 
+    // TODO: get rid of this function
     @NotNull
-    public JsExpression classCreationMethodReference() {
-        return kotlin(className);
-    }
-
-    @NotNull
-    public JsExpression enumClassCreationMethodReference() {
-        return kotlin(enumClassName);
-    }
-
-    @NotNull
-    public JsExpression traitCreationMethodReference() {
-        return kotlin(traitName);
+    public static String getStableMangledNameForDescriptor(@NotNull ClassDescriptor descriptor, @NotNull String functionName) {
+        Collection<SimpleFunctionDescriptor> functions = descriptor.getDefaultType().getMemberScope().getContributedFunctions(
+                Name.identifier(functionName), NoLookupLocation.FROM_BACKEND);
+        assert functions.size() == 1 : "Can't select a single function: " + functionName + " in " + descriptor;
+        SuggestedName suggested = new NameSuggestion().suggest(functions.iterator().next());
+        assert suggested != null : "Suggested name for class members is always non-null: " + functions.iterator().next();
+        return suggested.getNames().get(0);
     }
 
     @NotNull
@@ -323,11 +321,6 @@ public final class Namer {
     @NotNull
     public JsExpression rootPackageDefinitionMethodReference() {
         return defineRootPackage;
-    }
-
-    @NotNull
-    public JsExpression objectCreationMethodReference() {
-        return kotlin(objectName);
     }
 
     @NotNull
@@ -371,7 +364,7 @@ public final class Namer {
     }
 
     @NotNull
-    public JsExpression throwClassCastExceptionFunRef() {
+    public static JsExpression throwClassCastExceptionFunRef() {
         return new JsNameRef(THROW_CLASS_CAST_EXCEPTION_FUN_NAME, kotlinObject());
     }
 
@@ -398,6 +391,11 @@ public final class Namer {
     @NotNull
     public JsExpression isInstanceOf(@NotNull JsExpression type) {
         return invokeFunctionAndSetTypeCheckMetadata("isInstanceOf", type, TypeCheck.INSTANCEOF);
+    }
+
+    @NotNull
+    public JsExpression isInstanceOfObject(@NotNull JsExpression type) {
+        return invokeFunctionAndSetTypeCheckMetadata("isInstanceOf", type, TypeCheck.SAME_AS);
     }
 
     @NotNull
@@ -469,15 +467,15 @@ public final class Namer {
     public JsExpression classCreateInvocation(@NotNull ClassDescriptor descriptor) {
         switch (descriptor.getKind()) {
             case INTERFACE:
-                return traitCreationMethodReference();
+                return kotlin(interfaceCreationMethodName);
             case ENUM_CLASS:
-                return enumClassCreationMethodReference();
+                return kotlin(enumClassCreationMethodName);
             case ENUM_ENTRY:
             case OBJECT:
-                return objectCreationMethodReference();
+                return kotlin(objectCreationMethodName);
             case ANNOTATION_CLASS:
             case CLASS:
-                return classCreationMethodReference();
+                return kotlin(classCreationMethodReference);
             default:
                 throw new UnsupportedOperationException("Unsupported class kind: " + descriptor);
         }
@@ -496,13 +494,6 @@ public final class Namer {
     @NotNull
     public JsExpression getCallSetProperty() {
         return callSetProperty;
-    }
-
-    @NotNull
-    public JsExpression getModuleReference(@NotNull JsStringLiteral moduleName) {
-        JsArrayAccess result = new JsArrayAccess(modulesMap, moduleName);
-        MetadataProperties.setSideEffects(result, SideEffectKind.PURE);
-        return result;
     }
 
     public static JsNameRef kotlinLong() {

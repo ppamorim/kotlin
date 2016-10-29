@@ -22,6 +22,7 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns;
 import org.jetbrains.kotlin.builtins.PrimitiveType;
 import org.jetbrains.kotlin.descriptors.*;
+import org.jetbrains.kotlin.lexer.KtTokens;
 import org.jetbrains.kotlin.name.FqName;
 import org.jetbrains.kotlin.name.FqNameUnsafe;
 import org.jetbrains.kotlin.name.Name;
@@ -30,7 +31,10 @@ import org.jetbrains.kotlin.resolve.BindingContext;
 import org.jetbrains.kotlin.resolve.DescriptorUtils;
 import org.jetbrains.kotlin.resolve.calls.callUtil.CallUtilKt;
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall;
+import org.jetbrains.kotlin.resolve.scopes.receivers.ExpressionReceiver;
+import org.jetbrains.kotlin.resolve.scopes.receivers.ReceiverValue;
 import org.jetbrains.kotlin.types.KotlinType;
+import org.jetbrains.org.objectweb.asm.Type;
 
 import java.util.Arrays;
 import java.util.List;
@@ -123,16 +127,24 @@ public class RangeCodegenUtil {
         return getPrimitiveRangeOrProgressionElementType(className) != null;
     }
 
-    public static boolean isOptimizableRangeTo(CallableDescriptor rangeTo) {
-        if ("rangeTo".equals(rangeTo.getName().asString())) {
-            if (isPrimitiveNumberClassDescriptor(rangeTo.getContainingDeclaration())) {
-                return true;
-            }
-        }
-        return false;
+    public static boolean isPrimitiveNumberRangeTo(CallableDescriptor rangeTo) {
+        if (!"rangeTo".equals(rangeTo.getName().asString())) return false;
+
+        if (!isPrimitiveNumberClassDescriptor(rangeTo.getContainingDeclaration())) return false;
+
+        return true;
     }
 
-    public static boolean isOptimizableDownTo(@NotNull CallableDescriptor descriptor) {
+    private static boolean isPrimitiveRangeToExtension(@NotNull CallableDescriptor descriptor) {
+        if (!isTopLevelInPackage(descriptor, "rangeTo", "kotlin.ranges")) return false;
+
+        ReceiverParameterDescriptor extensionReceiver = descriptor.getExtensionReceiverParameter();
+        if (extensionReceiver == null) return false;
+
+        return KotlinBuiltIns.isPrimitiveType(extensionReceiver.getType());
+    }
+
+    public static boolean isPrimitiveNumberDownTo(@NotNull CallableDescriptor descriptor) {
         if (!isTopLevelInPackage(descriptor, "downTo", "kotlin.ranges")) return false;
 
         ReceiverParameterDescriptor extensionReceiver = descriptor.getExtensionReceiverParameter();
@@ -174,6 +186,56 @@ public class RangeCodegenUtil {
         if (!KotlinBuiltIns.isCharSequenceOrNullableCharSequence(extensionReceiverType)) return false;
 
         return true;
+    }
+
+    public static boolean isPrimitiveRangeToExtension(@NotNull KtSimpleNameExpression operationReference, @NotNull BindingContext bindingContext) {
+        ResolvedCall<? extends CallableDescriptor> resolvedCall = CallUtilKt
+                .getResolvedCallWithAssert(operationReference, bindingContext);
+        ReceiverValue receiver = resolvedCall.getDispatchReceiver();
+
+        /*
+         * Range is optimizable if
+         * 'in' receiver is expression 'rangeTo' from stdlib package
+         * and its argument has same primitive type as generic range parameter.
+         * For non-matching primitive types (e.g. int in double range)
+         * dispatch receiver will be null, because extension method will be called.
+         */
+        if (!(receiver instanceof ExpressionReceiver)) return false;
+        ExpressionReceiver e = (ExpressionReceiver) receiver;
+
+        ResolvedCall<? extends CallableDescriptor> resolvedReceiver =
+                CallUtilKt.getResolvedCall(e.getExpression(), bindingContext);
+        if (resolvedReceiver == null) return false;
+
+        return isPrimitiveRangeToExtension(resolvedReceiver.getResultingDescriptor());
+    }
+
+    /*
+     * Checks whether for expression 'x in a..b' a..b is primitive integral range
+     * with same type as x.
+     */
+    public static boolean isPrimitiveRangeSpecializationOfType(
+            @NotNull Type argumentType,
+            @NotNull KtExpression rangeExpression,
+            @NotNull BindingContext bindingContext
+    ) {
+        if (rangeExpression instanceof KtBinaryExpression &&
+            ((KtBinaryExpression) rangeExpression).getOperationReference().getReferencedNameElementType() == KtTokens.RANGE) {
+            KotlinType kotlinType = bindingContext.getType(rangeExpression);
+            assert kotlinType != null;
+            DeclarationDescriptor descriptor = kotlinType.getConstructor().getDeclarationDescriptor();
+            if (descriptor != null) {
+                FqNameUnsafe fqName = DescriptorUtils.getFqName(descriptor);
+                if (fqName.equals(KotlinBuiltIns.FQ_NAMES.longRange)) {
+                    return argumentType == Type.LONG_TYPE;
+                }
+                if (fqName.equals(KotlinBuiltIns.FQ_NAMES.charRange) || fqName.equals(KotlinBuiltIns.FQ_NAMES.intRange)) {
+                    return AsmUtil.isIntPrimitive(argumentType);
+                }
+            }
+        }
+
+        return false;
     }
 
     private static boolean isTopLevelInPackage(@NotNull CallableDescriptor descriptor, @NotNull String name, @NotNull String packageName) {

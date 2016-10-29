@@ -22,9 +22,10 @@ import org.jetbrains.kotlin.AbstractDataFlowValueRenderingTest
 import org.jetbrains.kotlin.addImport.AbstractAddImportTest
 import org.jetbrains.kotlin.android.*
 import org.jetbrains.kotlin.android.configure.AbstractConfigureProjectTest
+import org.jetbrains.kotlin.android.intentions.AbstractAndroidResourceIntentionTest
 import org.jetbrains.kotlin.annotation.AbstractAnnotationProcessorBoxTest
-import org.jetbrains.kotlin.annotation.processing.test.wrappers.AbstractJavaModelWrappersTest
-import org.jetbrains.kotlin.annotation.processing.test.wrappers.AbstractKotlinModelWrappersTest
+import org.jetbrains.kotlin.annotation.processing.test.sourceRetention.AbstractBytecodeListingTestForSourceRetention
+import org.jetbrains.kotlin.annotation.processing.test.wrappers.AbstractAnnotationProcessingTest
 import org.jetbrains.kotlin.asJava.AbstractCompilerLightClassTest
 import org.jetbrains.kotlin.cfg.AbstractControlFlowTest
 import org.jetbrains.kotlin.cfg.AbstractDataFlowTest
@@ -35,6 +36,7 @@ import org.jetbrains.kotlin.cli.AbstractCliTest
 import org.jetbrains.kotlin.codegen.*
 import org.jetbrains.kotlin.codegen.defaultConstructor.AbstractDefaultArgumentsReflectionTest
 import org.jetbrains.kotlin.codegen.flags.AbstractWriteFlagsTest
+import org.jetbrains.kotlin.codegen.ir.AbstractIrBlackBoxCodegenTest
 import org.jetbrains.kotlin.findUsages.AbstractFindUsagesTest
 import org.jetbrains.kotlin.findUsages.AbstractKotlinFindUsagesWithLibraryTest
 import org.jetbrains.kotlin.formatter.AbstractFormatterTest
@@ -53,6 +55,7 @@ import org.jetbrains.kotlin.idea.codeInsight.generate.AbstractGenerateTestSuppor
 import org.jetbrains.kotlin.idea.codeInsight.generate.AbstractGenerateToStringActionTest
 import org.jetbrains.kotlin.idea.codeInsight.moveUpDown.AbstractMoveLeftRightTest
 import org.jetbrains.kotlin.idea.codeInsight.moveUpDown.AbstractMoveStatementTest
+import org.jetbrains.kotlin.idea.codeInsight.postfix.AbstractPostfixTemplateProviderTest
 import org.jetbrains.kotlin.idea.codeInsight.surroundWith.AbstractSurroundWithTest
 import org.jetbrains.kotlin.idea.codeInsight.unwrap.AbstractUnwrapRemoveTest
 import org.jetbrains.kotlin.idea.completion.test.*
@@ -84,10 +87,13 @@ import org.jetbrains.kotlin.idea.folding.AbstractKotlinFoldingTest
 import org.jetbrains.kotlin.idea.hierarchy.AbstractHierarchyTest
 import org.jetbrains.kotlin.idea.hierarchy.AbstractHierarchyWithLibTest
 import org.jetbrains.kotlin.idea.highlighter.*
+import org.jetbrains.kotlin.idea.imports.AbstractJsOptimizeImportsTest
+import org.jetbrains.kotlin.idea.imports.AbstractJvmOptimizeImportsTest
 import org.jetbrains.kotlin.idea.imports.AbstractOptimizeImportsTest
 import org.jetbrains.kotlin.idea.intentions.AbstractIntentionTest
 import org.jetbrains.kotlin.idea.intentions.AbstractIntentionTest2
 import org.jetbrains.kotlin.idea.intentions.AbstractMultiFileIntentionTest
+import org.jetbrains.kotlin.idea.intentions.AbstractConcatenatedStringGeneratorTest
 import org.jetbrains.kotlin.idea.intentions.declarations.AbstractJoinLinesTest
 import org.jetbrains.kotlin.idea.internal.AbstractBytecodeToolWindowTest
 import org.jetbrains.kotlin.idea.kdoc.AbstractKDocHighlightingTest
@@ -117,6 +123,7 @@ import org.jetbrains.kotlin.idea.stubs.AbstractMultiFileHighlightingTest
 import org.jetbrains.kotlin.idea.stubs.AbstractResolveByStubTest
 import org.jetbrains.kotlin.idea.stubs.AbstractStubBuilderTest
 import org.jetbrains.kotlin.integration.AbstractAntTaskTest
+import org.jetbrains.kotlin.ir.*
 import org.jetbrains.kotlin.j2k.AbstractJavaToKotlinConverterForWebDemoTest
 import org.jetbrains.kotlin.j2k.AbstractJavaToKotlinConverterMultiFileTest
 import org.jetbrains.kotlin.j2k.AbstractJavaToKotlinConverterSingleFileTest
@@ -215,6 +222,10 @@ fun main(args: Array<String>) {
             model("codegen/box", targetBackend = TargetBackend.JVM)
         }
 
+        testClass<AbstractIrBlackBoxCodegenTest>("IrOnlyBoxCodegenTestGenerated") {
+            model("ir/box", targetBackend = TargetBackend.JVM)
+        }
+
         testClass<AbstractBlackBoxInlineCodegenTest>("BlackBoxInlineCodegenTestGenerated") {
             model("codegen/boxInline")
         }
@@ -233,6 +244,14 @@ fun main(args: Array<String>) {
 
         testClass<AbstractBytecodeTextTest>() {
             model("codegen/bytecodeText")
+        }
+
+        testClass<AbstractIrTextTestCase>() {
+            model("ir/irText")
+        }
+
+        testClass<AbstractIrCfgTestCase>() {
+            model("ir/irCfg")
         }
 
         testClass<AbstractBytecodeListingTest>() {
@@ -361,6 +380,12 @@ fun main(args: Array<String>) {
         }
     }
 
+    testGroup("compiler/tests-ir-jvm/tests", "compiler/testData") {
+        testClass<AbstractIrBlackBoxCodegenTest>() {
+            model("codegen/box", targetBackend = TargetBackend.JVM)
+        }
+    }
+
     testGroup("compiler/tests-java8/tests", "compiler/testData") {
         testClass<AbstractBlackBoxCodegenTest>("BlackBoxWithJava8CodegenTestGenerated") {
             model("codegen/java8/box")
@@ -454,7 +479,7 @@ fun main(args: Array<String>) {
         }
 
         testClass<AbstractParameterInfoTest>() {
-            model("parameterInfo", recursive = true, excludeDirs = listOf("withLib/sharedLib"))
+            model("parameterInfo", recursive = true, excludeDirs = listOf("withLib1/sharedLib", "withLib2/sharedLib", "withLib3/sharedLib"))
         }
 
         testClass<AbstractKotlinGotoTest>() {
@@ -507,10 +532,16 @@ fun main(args: Array<String>) {
             model("codeInsight/surroundWith/tryCatchFinally", testMethod = "doTestWithTryCatchFinallySurrounder")
             model("codeInsight/surroundWith/tryFinally", testMethod = "doTestWithTryFinallySurrounder")
             model("codeInsight/surroundWith/functionLiteral", testMethod = "doTestWithFunctionLiteralSurrounder")
+            model("codeInsight/surroundWith/withIfExpression", testMethod = "doTestWithSurroundWithIfExpression")
+            model("codeInsight/surroundWith/withIfElseExpression", testMethod = "doTestWithSurroundWithIfElseExpression")
         }
 
         testClass<AbstractJoinLinesTest>() {
             model("joinLines")
+        }
+
+        testClass<AbstractBreadcrumbsTest>() {
+            model("codeInsight/breadcrumbs")
         }
 
         testClass<AbstractIntentionTest>() {
@@ -519,6 +550,10 @@ fun main(args: Array<String>) {
 
         testClass<AbstractIntentionTest2>() {
             model("intentions/loopToCallChain", pattern = "^([\\w\\-_]+)\\.kt$")
+        }
+
+        testClass<AbstractConcatenatedStringGeneratorTest> {
+            model("concatenatedStringGenerator", pattern = "^([\\w\\-_]+)\\.kt$")
         }
 
         testClass<AbstractInspectionTest>() {
@@ -531,6 +566,7 @@ fun main(args: Array<String>) {
             model("hierarchy/class/super", extension = null, recursive = false, testMethod = "doSuperClassHierarchyTest")
             model("hierarchy/class/sub", extension = null, recursive = false, testMethod = "doSubClassHierarchyTest")
             model("hierarchy/calls/callers", extension = null, recursive = false, testMethod = "doCallerHierarchyTest")
+            model("hierarchy/calls/callersJava", extension = null, recursive = false, testMethod = "doCallerJavaHierarchyTest")
             model("hierarchy/calls/callees", extension = null, recursive = false, testMethod = "doCalleeHierarchyTest")
             model("hierarchy/overrides", extension = null, recursive = false, testMethod = "doOverrideHierarchyTest")
         }
@@ -566,6 +602,10 @@ fun main(args: Array<String>) {
             model("codeInsight/unwrapAndRemove/unwrapFinally", testMethod = "doTestFinallyUnwrapper")
             model("codeInsight/unwrapAndRemove/removeFinally", testMethod = "doTestFinallyRemover")
             model("codeInsight/unwrapAndRemove/unwrapLambda", testMethod = "doTestLambdaUnwrapper")
+        }
+
+        testClass<AbstractExpressionTypeTest>() {
+            model("codeInsight/expressionType")
         }
 
         testClass<AbstractBackspaceHandlerTest>() {
@@ -737,8 +777,13 @@ fun main(args: Array<String>) {
             model("decompiler/stubBuilder", extension = null, recursive = false)
         }
 
-        testClass<AbstractOptimizeImportsTest>() {
-            model("editor/optimizeImports", pattern = KT_WITHOUT_DOTS_IN_NAME)
+        testClass<AbstractJvmOptimizeImportsTest>() {
+            model("editor/optimizeImports/jvm", pattern = KT_WITHOUT_DOTS_IN_NAME)
+            model("editor/optimizeImports/common", pattern = KT_WITHOUT_DOTS_IN_NAME)
+        }
+        testClass<AbstractJsOptimizeImportsTest>() {
+            model("editor/optimizeImports/js", pattern = KT_WITHOUT_DOTS_IN_NAME)
+            model("editor/optimizeImports/common", pattern = KT_WITHOUT_DOTS_IN_NAME)
         }
 
         testClass<AbstractPositionManagerTest>() {
@@ -790,6 +835,8 @@ fun main(args: Array<String>) {
             model("refactoring/introduceJavaParameter", extension = "java", testMethod = "doIntroduceJavaParameterTest")
             model("refactoring/introduceTypeParameter", pattern = KT_OR_KTS, testMethod = "doIntroduceTypeParameterTest")
             model("refactoring/introduceTypeAlias", pattern = KT_OR_KTS, testMethod = "doIntroduceTypeAliasTest")
+            model("refactoring/extractSuperclass", pattern = KT_OR_KTS, testMethod = "doExtractSuperclassTest")
+            model("refactoring/extractInterface", pattern = KT_OR_KTS, testMethod = "doExtractInterfaceTest")
         }
 
         testClass<AbstractPullUpTest>() {
@@ -799,7 +846,9 @@ fun main(args: Array<String>) {
         }
 
         testClass<AbstractPushDownTest>() {
-            model("refactoring/pushDown", extension = "kt", singleClass = true)
+            model("refactoring/pushDown/k2k", extension = "kt", singleClass = true, testClassName = "K2K", testMethod = "doKotlinTest")
+            model("refactoring/pushDown/k2j", extension = "kt", singleClass = true, testClassName = "K2J", testMethod = "doKotlinTest")
+            model("refactoring/pushDown/j2k", extension = "java", singleClass = true, testClassName = "J2K", testMethod = "doJavaTest")
         }
 
         testClass<AbstractSelectExpressionForDebuggerTest>() {
@@ -847,6 +896,10 @@ fun main(args: Array<String>) {
             model("repl/completion")
         }
 
+        testClass<AbstractPostfixTemplateProviderTest> {
+            model("codeInsight/postfix")
+        }
+
         testClass<AbstractScriptConfigurationHighlightingTest> {
             model("script/definition/highlighting", extension = null, recursive = false)
         }
@@ -879,7 +932,7 @@ fun main(args: Array<String>) {
         }
 
         testClass<AbstractIdeCompiledLightClassTest> {
-            model("asJava/lightClasses", excludeDirs = listOf("local"), pattern = KT_WITHOUT_DOTS_IN_NAME)
+            model("asJava/lightClasses", excludeDirs = listOf("local", "compilationErrors"), pattern = KT_WITHOUT_DOTS_IN_NAME)
         }
     }
 
@@ -1064,14 +1117,14 @@ fun main(args: Array<String>) {
             model("collectToFile", recursive = false, extension = null)
         }
     }
-    
+
     testGroup("plugins/plugins-tests/tests", "plugins/annotation-processing/testData") {
-        testClass<AbstractJavaModelWrappersTest>() {
-            model("javaWrappers", extension = null)
+        testClass<AbstractAnnotationProcessingTest>() {
+            model("wrappers", recursive = true, extension = "kt")
         }
         
-        testClass<AbstractKotlinModelWrappersTest>() {
-            model("kotlinWrappers", extension = "kt")
+        testClass<AbstractBytecodeListingTestForSourceRetention>() {
+            model("sourceRetention", extension = "kt")
         }
     }
 
@@ -1101,6 +1154,10 @@ fun main(args: Array<String>) {
         testClass<AbstractConfigureProjectTest>() {
             model("configuration/android-gradle", pattern = """(\w+)_before\.gradle$""", testMethod = "doTestAndroidGradle")
         }
+
+        testClass<AbstractAndroidResourceIntentionTest> {
+            model("android/resourceIntentions", extension = "test", singleClass = true)
+        }
     }
 
     testGroup("plugins/plugins-tests/tests", "plugins/android-extensions/android-extensions-jps/testData") {
@@ -1112,60 +1169,8 @@ fun main(args: Array<String>) {
     generateTestDataForReservedWords()
 
     testGroup("js/js.tests/test", "js/js.translator/testData") {
-        testClass<AbstractReservedWordTest>() {
-            model("reservedWords/cases")
-        }
-
-        testClass<AbstractDynamicTest>() {
-            model("dynamic/cases")
-        }
-
-        testClass<AbstractMultiModuleTest>() {
-            model("multiModule/cases", extension = null, recursive =false)
-        }
-
-        testClass<AbstractInlineJsTest>() {
-            model("inline/cases")
-        }
-
-        testClass<AbstractInlineJsStdlibTest>() {
-            model("inlineStdlib/cases")
-        }
-
-        testClass<AbstractInlineEvaluationOrderTest>() {
-            model("inlineEvaluationOrder/cases")
-        }
-
-        testClass<AbstractInlineMultiModuleTest>() {
-            model("inlineMultiModule/cases", extension = null, recursive =false)
-        }
-
-        testClass<AbstractLabelTest>() {
-            model("labels/cases")
-        }
-
-        testClass<AbstractJsCodeTest>() {
-            model("jsCode/cases")
-        }
-
-        testClass<AbstractInlineSizeReductionTest>() {
-            model("inlineSizeReduction/cases")
-        }
-
-        testClass<AbstractReifiedTest>() {
-            model("reified/cases")
-        }
-
-        testClass<AbstractRttiTest>() {
-            model("rtti/cases")
-        }
-
-        testClass<AbstractCastTest>() {
-            model("expression/cast/cases")
-        }
-
-        testClass<AbstractLightReflectionTest>() {
-            model("reflection/light/cases")
+        testClass<AbstractBoxJsTest>() {
+            model("box/", pattern = "^([^_](.+))\\.kt$")
         }
     }
 
@@ -1204,6 +1209,22 @@ fun main(args: Array<String>) {
 
         testClass<AbstractNonLocalReturnsTest>() {
             model("codegen/boxInline/nonLocalReturns/", targetBackend = TargetBackend.JS)
+        }
+
+        testClass<AbstractTypeAliasesTests>() {
+            model("codegen/box/typealias/", targetBackend = TargetBackend.JS)
+        }
+
+        testClass<AbstractBinaryOpTests>() {
+            model("codegen/box/binaryOp", targetBackend = TargetBackend.JS)
+        }
+
+        testClass<AbstractLambdaDestructuringTests>() {
+            model("codegen/box/destructuringDeclInLambdaParam/", targetBackend = TargetBackend.JS)
+        }
+
+        testClass<AbstractMultiDeclarationTests>() {
+            model("codegen/box/multiDecl/", targetBackend = TargetBackend.JS)
         }
     }
 }

@@ -27,7 +27,7 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.kotlin.builtins.FunctionTypesKt;
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns;
 import org.jetbrains.kotlin.config.LanguageFeature;
-import org.jetbrains.kotlin.config.LanguageFeatureSettings;
+import org.jetbrains.kotlin.config.LanguageVersionSettings;
 import org.jetbrains.kotlin.descriptors.*;
 import org.jetbrains.kotlin.descriptors.impl.SyntheticFieldDescriptor;
 import org.jetbrains.kotlin.diagnostics.Errors;
@@ -71,7 +71,7 @@ public class BodyResolver {
     @NotNull private final BodyResolveCache bodyResolveCache;
     @NotNull private final KotlinBuiltIns builtIns;
     @NotNull private final OverloadChecker overloadChecker;
-    @NotNull private final LanguageFeatureSettings languageFeatureSettings;
+    @NotNull private final LanguageVersionSettings languageVersionSettings;
 
     public BodyResolver(
             @NotNull AnnotationResolver annotationResolver,
@@ -87,7 +87,7 @@ public class BodyResolver {
             @NotNull AnnotationChecker annotationChecker,
             @NotNull KotlinBuiltIns builtIns,
             @NotNull OverloadChecker overloadChecker,
-            @NotNull LanguageFeatureSettings languageFeatureSettings
+            @NotNull LanguageVersionSettings languageVersionSettings
     ) {
         this.annotationResolver = annotationResolver;
         this.bodyResolveCache = bodyResolveCache;
@@ -102,7 +102,7 @@ public class BodyResolver {
         this.trace = new ObservableBindingTrace(trace);
         this.valueParameterResolver = valueParameterResolver;
         this.builtIns = builtIns;
-        this.languageFeatureSettings = languageFeatureSettings;
+        this.languageVersionSettings = languageVersionSettings;
     }
 
     private void resolveBehaviorDeclarationBodies(@NotNull BodiesResolveContext c) {
@@ -122,14 +122,14 @@ public class BodyResolver {
     }
 
     private void resolveSecondaryConstructors(@NotNull BodiesResolveContext c) {
-        for (Map.Entry<KtSecondaryConstructor, ConstructorDescriptor> entry : c.getSecondaryConstructors().entrySet()) {
+        for (Map.Entry<KtSecondaryConstructor, ClassConstructorDescriptor> entry : c.getSecondaryConstructors().entrySet()) {
             LexicalScope declaringScope = c.getDeclaringScope(entry.getKey());
             assert declaringScope != null : "Declaring scope should be registered before body resolve";
             resolveSecondaryConstructorBody(c.getOuterDataFlowInfo(), trace, entry.getKey(), entry.getValue(), declaringScope);
         }
         if (c.getSecondaryConstructors().isEmpty()) return;
         Set<ConstructorDescriptor> visitedConstructors = Sets.newHashSet();
-        for (Map.Entry<KtSecondaryConstructor, ConstructorDescriptor> entry : c.getSecondaryConstructors().entrySet()) {
+        for (Map.Entry<KtSecondaryConstructor, ClassConstructorDescriptor> entry : c.getSecondaryConstructors().entrySet()) {
             checkCyclicConstructorDelegationCall(entry.getValue(), visitedConstructors);
         }
     }
@@ -138,7 +138,7 @@ public class BodyResolver {
             @NotNull final DataFlowInfo outerDataFlowInfo,
             @NotNull final BindingTrace trace,
             @NotNull final KtSecondaryConstructor constructor,
-            @NotNull final ConstructorDescriptor descriptor,
+            @NotNull final ClassConstructorDescriptor descriptor,
             @NotNull LexicalScope declaringScope
     ) {
         ForceResolveUtil.forceResolveAllContents(descriptor.getAnnotations());
@@ -167,7 +167,7 @@ public class BodyResolver {
             @NotNull BindingTrace trace,
             @NotNull LexicalScope scope,
             @NotNull KtSecondaryConstructor constructor,
-            @NotNull ConstructorDescriptor descriptor
+            @NotNull ClassConstructorDescriptor descriptor
     ) {
         OverloadResolutionResults<?> results = callResolver.resolveConstructorDelegationCall(
                 trace, scope, outerDataFlowInfo,
@@ -400,7 +400,7 @@ public class BodyResolver {
         if (ktClassOrObject instanceof KtEnumEntry) {
             parentEnumOrSealed = Collections.singleton(((ClassDescriptor) descriptor.getContainingDeclaration()).getTypeConstructor());
         }
-        else if (languageFeatureSettings.supportsFeature(TopLevelSealedInheritance) && DescriptorUtils.isTopLevelDeclaration(descriptor)) {
+        else if (languageVersionSettings.supportsFeature(TopLevelSealedInheritance) && DescriptorUtils.isTopLevelDeclaration(descriptor)) {
             // TODO: improve diagnostic when top level sealed inheritance is disabled
             for (KotlinType supertype : supertypes.values()) {
                 ClassifierDescriptor classifierDescriptor = supertype.getConstructor().getDeclarationDescriptor();
@@ -477,7 +477,7 @@ public class BodyResolver {
                         addSupertype = false;
                     }
                     else if (ktClassOrObject.hasModifier(KtTokens.DATA_KEYWORD) &&
-                             !languageFeatureSettings.supportsFeature(LanguageFeature.DataClassInheritance)) {
+                             !languageVersionSettings.supportsFeature(LanguageFeature.DataClassInheritance)) {
                         trace.report(DATA_CLASS_CANNOT_HAVE_CLASS_SUPERTYPES.on(typeReference));
                         addSupertype = false;
                     }
@@ -560,7 +560,7 @@ public class BodyResolver {
 
     private void processModifiersOnInitializer(@NotNull KtModifierListOwner owner, @NotNull LexicalScope scope) {
         annotationChecker.check(owner, trace, null);
-        ModifierCheckerCore.INSTANCE.check(owner, trace, null, languageFeatureSettings);
+        ModifierCheckerCore.INSTANCE.check(owner, trace, null, languageVersionSettings);
         KtModifierList modifierList = owner.getModifierList();
         if (modifierList == null) return;
 
@@ -832,14 +832,14 @@ public class BodyResolver {
         assert functionDescriptor.getReturnType() != null;
     }
 
-    public void resolveConstructorParameterDefaultValuesAndAnnotations(
+    public void resolveConstructorParameterDefaultValues(
             @NotNull DataFlowInfo outerDataFlowInfo,
             @NotNull BindingTrace trace,
-            @NotNull KtClass klass,
+            @NotNull KtPrimaryConstructor constructor,
             @NotNull ConstructorDescriptor constructorDescriptor,
             @NotNull LexicalScope declaringScope
     ) {
-        List<KtParameter> valueParameters = klass.getPrimaryConstructorParameters();
+        List<KtParameter> valueParameters = constructor.getValueParameters();
         List<ValueParameterDescriptor> valueParameterDescriptors = constructorDescriptor.getValueParameters();
 
         LexicalScope scope = getPrimaryConstructorParametersScope(declaringScope, constructorDescriptor);

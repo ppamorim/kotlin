@@ -54,6 +54,10 @@ public class PluginStartupComponent implements ApplicationComponent {
     public void initComponent() {
         registerPathVariable();
 
+        if (ApplicationManager.getApplication().isUnitTestMode()) {
+            ThreadTrackerPatcherForTeamCityTesting.INSTANCE.patchThreadTracker();
+        }
+
         JarUserDataManager.INSTANCE.register(KotlinJavaScriptLibraryDetectionUtil.HasKotlinJSMetadataInJar.INSTANCE);
 
         DebuggerFiltersUtilKt.addKotlinStdlibDebugFilterIfNeeded();

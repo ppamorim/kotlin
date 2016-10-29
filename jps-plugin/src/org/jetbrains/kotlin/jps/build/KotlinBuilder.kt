@@ -57,6 +57,7 @@ import org.jetbrains.kotlin.config.Services
 import org.jetbrains.kotlin.daemon.common.isDaemonEnabled
 import org.jetbrains.kotlin.incremental.*
 import org.jetbrains.kotlin.incremental.components.LookupTracker
+import org.jetbrains.kotlin.incremental.components.SourceRetentionAnnotationHandler
 import org.jetbrains.kotlin.jps.JpsKotlinCompilerSettings
 import org.jetbrains.kotlin.jps.incremental.*
 import org.jetbrains.kotlin.load.kotlin.incremental.components.IncrementalCache
@@ -206,7 +207,8 @@ class KotlinBuilder : ModuleLevelBuilder(BuilderCategory.SOURCE_PROCESSOR) {
         val project = projectDescriptor.project
         val lookupTracker = getLookupTracker(project)
         val incrementalCaches = getIncrementalCaches(chunk, context)
-        val environment = createCompileEnvironment(incrementalCaches, lookupTracker, context)
+        val sourceRetentionAnnotationHandler = SourceRetentionAnnotationHandlerImpl()
+        val environment = createCompileEnvironment(incrementalCaches, lookupTracker, sourceRetentionAnnotationHandler, context)
         if (!environment.success()) {
             environment.reportErrorsTo(messageCollector)
             return ABORT
@@ -409,17 +411,23 @@ class KotlinBuilder : ModuleLevelBuilder(BuilderCategory.SOURCE_PROCESSOR) {
     private fun createCompileEnvironment(
             incrementalCaches: Map<ModuleBuildTarget, IncrementalCache>,
             lookupTracker: LookupTracker,
+            sourceRetentionAnnotationHandler: SourceRetentionAnnotationHandler?,
             context: CompileContext
     ): CompilerEnvironment {
-        val compilerServices = Services.Builder()
-                .register(IncrementalCompilationComponents::class.java,
-                          IncrementalCompilationComponentsImpl(incrementalCaches.mapKeys { TargetId(it.key) }, lookupTracker))
-                .register(CompilationCanceledStatus::class.java, object : CompilationCanceledStatus {
-                    override fun checkCanceled() {
-                        if (context.cancelStatus.isCanceled) throw CompilationCanceledException()
-                    }
-                })
-                .build()
+        val compilerServices = with(Services.Builder()) {
+            register(IncrementalCompilationComponents::class.java,
+                  IncrementalCompilationComponentsImpl(incrementalCaches.mapKeys { TargetId(it.key) },
+                                                       lookupTracker))
+            register(CompilationCanceledStatus::class.java, object : CompilationCanceledStatus {
+                override fun checkCanceled() {
+                    if (context.cancelStatus.isCanceled) throw CompilationCanceledException()
+                }
+            })
+            sourceRetentionAnnotationHandler?.let {
+                register(SourceRetentionAnnotationHandler::class.java, it)
+            }
+            build()
+        }
 
         return CompilerEnvironment.getEnvironmentFor(
                 PathUtil.getKotlinPathsForJpsPluginOrJpsTests(),
@@ -780,6 +788,14 @@ private fun CompilationResult.doProcessChanges(
     }
 }
 
+private class JpsIncReporter : IncReporter() {
+    override fun report(message: ()->String) {
+        if (KotlinBuilder.LOG.isDebugEnabled) {
+            KotlinBuilder.LOG.debug(message())
+        }
+    }
+}
+
 private fun CompilationResult.doProcessChangesUsingLookups(
         compiledFiles: Set<File>,
         dataManager: BuildDataManager,
@@ -788,16 +804,16 @@ private fun CompilationResult.doProcessChangesUsingLookups(
 ) {
     val lookupStorage = dataManager.getStorage(KotlinDataContainerTarget, JpsLookupStorageProvider)
     val allCaches = caches.flatMap { it.thisWithDependentCaches }
-    val logAction = { logStr: String -> KotlinBuilder.LOG.debug(logStr) }
+    val reporter = JpsIncReporter()
 
-    logAction("Start processing changes")
+    reporter.report { "Start processing changes" }
 
-    val (dirtyLookupSymbols, dirtyClassFqNames) = getDirtyData(allCaches, logAction)
-    val dirtyFiles = mapLookupSymbolsToFiles(lookupStorage, dirtyLookupSymbols, logAction) +
-                     mapClassesFqNamesToFiles(allCaches, dirtyClassFqNames, logAction)
+    val (dirtyLookupSymbols, dirtyClassFqNames) = getDirtyData(allCaches, reporter)
+    val dirtyFiles = mapLookupSymbolsToFiles(lookupStorage, dirtyLookupSymbols, reporter) +
+                     mapClassesFqNamesToFiles(allCaches, dirtyClassFqNames, reporter)
     fsOperations.markFiles(dirtyFiles.asIterable(), excludeFiles = compiledFiles)
 
-    logAction("End of processing changes")
+    reporter.report { "End of processing changes" }
 }
 
 private fun getLookupTracker(project: JpsProject): LookupTracker {

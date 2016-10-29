@@ -44,6 +44,7 @@ import org.jetbrains.kotlin.idea.refactoring.formatClass
 import org.jetbrains.kotlin.idea.refactoring.formatFunction
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.idea.search.usagesSearch.buildProcessDelegationCallConstructorUsagesTask
+import org.jetbrains.kotlin.idea.search.usagesSearch.processDelegationCallConstructorUsages
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.getNonStrictParentOfType
@@ -179,12 +180,12 @@ class KotlinSafeDeleteProcessor : JavaSafeDeleteProcessor() {
                 else -> return
             }
             for (constructor in constructors) {
-                constructor.buildProcessDelegationCallConstructorUsagesTask(constructor.useScope) {
+                constructor.processDelegationCallConstructorUsages(constructor.useScope) {
                     if (!getIgnoranceCondition().value(it)) {
                         usages.add(SafeDeleteReferenceSimpleDeleteUsageInfo(it, element, false))
                     }
                     true
-                }.invoke()
+                }
             }
         }
 
@@ -344,11 +345,7 @@ class KotlinSafeDeleteProcessor : JavaSafeDeleteProcessor() {
         if (ApplicationManager.getApplication()!!.isUnitTestMode) return Collections.singletonList(element)
 
         return when (element) {
-            is KtNamedFunction, is KtProperty ->
-                checkSuperMethods(
-                        element as KtDeclaration, allElementsToDelete, "super.methods.delete.with.usage.search"
-                )
-
+            is KtNamedFunction, is KtProperty -> checkSuperMethods(element as KtDeclaration, allElementsToDelete, "delete (with usage search)")
             else -> super.getElementsToSearch(element, module, allElementsToDelete)
         }
     }

@@ -37,10 +37,11 @@ import org.jetbrains.kotlin.compiler.plugin.CliOptionProcessingException
 import org.jetbrains.kotlin.compiler.plugin.PluginCliOptionProcessingException
 import org.jetbrains.kotlin.compiler.plugin.cliPluginUsageString
 import org.jetbrains.kotlin.config.*
+import org.jetbrains.kotlin.incremental.components.SourceRetentionAnnotationHandler
 import org.jetbrains.kotlin.load.java.JvmAbi
 import org.jetbrains.kotlin.load.kotlin.JvmMetadataVersion
 import org.jetbrains.kotlin.load.kotlin.incremental.components.IncrementalCompilationComponents
-import org.jetbrains.kotlin.script.KotlinScriptDefinitionFromTemplate
+import org.jetbrains.kotlin.script.KotlinScriptDefinitionFromAnnotatedTemplate
 import org.jetbrains.kotlin.script.StandardScriptDefinition
 import org.jetbrains.kotlin.util.PerformanceCounter
 import org.jetbrains.kotlin.utils.KotlinPaths
@@ -92,7 +93,7 @@ class K2JVMCompiler : CLICompiler<K2JVMCompilerArguments>() {
                 )
                 return COMPILATION_ERROR
             }
-            configuration.addKotlinSourceRoot(arguments.freeArgs.get(0))
+            configuration.addKotlinSourceRoot(arguments.freeArgs[0])
         }
         else if (arguments.module == null) {
             for (arg in arguments.freeArgs) {
@@ -135,6 +136,17 @@ class K2JVMCompiler : CLICompiler<K2JVMCompilerArguments>() {
                 val errorMessage = "Unknown JVM target version: ${arguments.jvmTarget}\n" +
                                    "Supported versions: ${JvmTarget.values().joinToString { it.string }}"
                 messageCollector.report(CompilerMessageSeverity.ERROR, errorMessage, CompilerMessageLocation.NO_LOCATION)
+            }
+        }
+
+        if (arguments.interfaceCompatibility) {
+            val target = configuration.get(JVMConfigurationKeys.JVM_TARGET)
+            if (target != JvmTarget.JVM_1_8) {
+                val errorMessage = "The -Xinterface-compatibility option has effect only for JVM target bytecode version 1.8."
+                messageCollector.report(CompilerMessageSeverity.WARNING, errorMessage, CompilerMessageLocation.NO_LOCATION)
+            }
+            else {
+                configuration.put(JVMConfigurationKeys.INTERFACE_COMPATIBILITY, true)
             }
         }
 
@@ -225,7 +237,7 @@ class K2JVMCompiler : CLICompiler<K2JVMCompilerArguments>() {
     ): KotlinCoreEnvironment? {
 
         val scriptResolverEnv = hashMapOf<String, Any?>()
-        configureScriptDefinitions(arguments, configuration, messageCollector, scriptResolverEnv)
+        configureScriptDefinitions(arguments.scriptTemplates, configuration, messageCollector, scriptResolverEnv)
         if (!messageCollector.hasErrors()) {
             val environment = createCoreEnvironment(rootDisposable, configuration)
             if (!messageCollector.hasErrors()) {
@@ -234,50 +246,6 @@ class K2JVMCompiler : CLICompiler<K2JVMCompilerArguments>() {
             }
         }
         return null
-    }
-
-    private fun configureScriptDefinitions(arguments: K2JVMCompilerArguments,
-                                           configuration: CompilerConfiguration,
-                                           messageCollector: MessageCollector,
-                                           scriptResolverEnv: HashMap<String, Any?>) {
-        val classpath = configuration.getList(JVMConfigurationKeys.CONTENT_ROOTS).filterIsInstance(JvmClasspathRoot::class.java).mapNotNull { it.file }
-        // TODO: consider using escaping to allow kotlin escaped names in class names
-        if (arguments.scriptTemplates != null && arguments.scriptTemplates.isNotEmpty()) {
-            val classloader = URLClassLoader(classpath.map { it.toURI().toURL() }.toTypedArray(), this.javaClass.classLoader)
-            var hasErrors = false
-            for (template in arguments.scriptTemplates) {
-                try {
-                    val cls = classloader.loadClass(template)
-                    val def = KotlinScriptDefinitionFromTemplate(cls.kotlin, null, null, scriptResolverEnv)
-                    configuration.add(JVMConfigurationKeys.SCRIPT_DEFINITIONS, def)
-                    messageCollector.report(
-                            CompilerMessageSeverity.INFO,
-                            "Added script definition $template to configuration: files pattern = \"${def.scriptFilePattern}\", resolver = ${def.resolver?.javaClass?.name}",
-                            CompilerMessageLocation.NO_LOCATION
-                    )
-                }
-                catch (ex: ClassNotFoundException) {
-                    messageCollector.report(
-                            CompilerMessageSeverity.ERROR, "Cannot find script definition template class $template", CompilerMessageLocation.NO_LOCATION
-                    )
-                    hasErrors = true
-                }
-                catch (ex: Exception) {
-                    messageCollector.report(
-                            CompilerMessageSeverity.ERROR, "Error processing script definition template $template: ${ex.message}", CompilerMessageLocation.NO_LOCATION
-                    )
-                    hasErrors = true
-                    break
-                }
-            }
-            if (hasErrors) {
-                messageCollector.report(
-                        CompilerMessageSeverity.LOGGING, "(Classpath used for templates loading: $classpath)", CompilerMessageLocation.NO_LOCATION
-                )
-                return
-            }
-        }
-        configuration.add(JVMConfigurationKeys.SCRIPT_DEFINITIONS, StandardScriptDefinition)
     }
 
     private fun createCoreEnvironment(rootDisposable: Disposable, configuration: CompilerConfiguration): KotlinCoreEnvironment {
@@ -299,6 +267,10 @@ class K2JVMCompiler : CLICompiler<K2JVMCompilerArguments>() {
             if (components != null) {
                 configuration.put(JVMConfigurationKeys.INCREMENTAL_COMPILATION_COMPONENTS, components)
             }
+        }
+
+        services.get(SourceRetentionAnnotationHandler::class.java)?.let { handler ->
+            configuration.put(JVMConfigurationKeys.SOURCE_RETENTION_ANNOTATION_HANDLER, handler)
         }
     }
 
@@ -360,7 +332,8 @@ class K2JVMCompiler : CLICompiler<K2JVMCompilerArguments>() {
             configuration.put(JVMConfigurationKeys.INHERIT_MULTIFILE_PARTS, arguments.inheritMultifileParts)
             configuration.put(CLIConfigurationKeys.ALLOW_KOTLIN_PACKAGE, arguments.allowKotlinPackage)
             configuration.put(CLIConfigurationKeys.REPORT_PERF, arguments.reportPerf)
-            configuration.put(JVMConfigurationKeys.LOAD_SCRIPT_CONFIGS, arguments.loadScriptConfigs)
+            configuration.put(JVMConfigurationKeys.USE_SINGLE_MODULE, arguments.singleModule)
+            configuration.put(JVMConfigurationKeys.ADD_BUILT_INS_TO_DEPENDENCIES, arguments.addCompilerBuiltIns)
 
             arguments.declarationsOutputPath?.let { configuration.put(JVMConfigurationKeys.DECLARATIONS_JSON_PATH, it) }
         }
@@ -372,6 +345,7 @@ class K2JVMCompiler : CLICompiler<K2JVMCompilerArguments>() {
             }
             if (!arguments.noStdlib) {
                 classpath.add(paths.runtimePath)
+                classpath.add(paths.scriptRuntimePath)
             }
             // "-no-stdlib" implies "-no-reflect": otherwise we would be able to transitively read stdlib classes through kotlin-reflect,
             // which is likely not what user wants since s/he manually provided "-no-stdlib"
@@ -414,6 +388,50 @@ class K2JVMCompiler : CLICompiler<K2JVMCompilerArguments>() {
                 return INTERNAL_ERROR
             }
             return OK
+        }
+
+        fun configureScriptDefinitions(scriptTemplates: Array<String>?,
+                                       configuration: CompilerConfiguration,
+                                       messageCollector: MessageCollector,
+                                       scriptResolverEnv: HashMap<String, Any?>) {
+            val classpath = configuration.getList(JVMConfigurationKeys.CONTENT_ROOTS).filterIsInstance(JvmClasspathRoot::class.java).mapNotNull { it.file }
+            // TODO: consider using escaping to allow kotlin escaped names in class names
+            if (scriptTemplates != null && scriptTemplates.isNotEmpty()) {
+                val classloader = URLClassLoader(classpath.map { it.toURI().toURL() }.toTypedArray(), Thread.currentThread().contextClassLoader)
+                var hasErrors = false
+                for (template in scriptTemplates) {
+                    try {
+                        val cls = classloader.loadClass(template)
+                        val def = KotlinScriptDefinitionFromAnnotatedTemplate(cls.kotlin, null, null, scriptResolverEnv)
+                        configuration.add(JVMConfigurationKeys.SCRIPT_DEFINITIONS, def)
+                        messageCollector.report(
+                                CompilerMessageSeverity.INFO,
+                                "Added script definition $template to configuration: files pattern = \"${def.scriptFilePattern}\", resolver = ${def.resolver?.javaClass?.name}",
+                                CompilerMessageLocation.NO_LOCATION
+                        )
+                    }
+                    catch (ex: ClassNotFoundException) {
+                        messageCollector.report(
+                                CompilerMessageSeverity.ERROR, "Cannot find script definition template class $template", CompilerMessageLocation.NO_LOCATION
+                        )
+                        hasErrors = true
+                    }
+                    catch (ex: Exception) {
+                        messageCollector.report(
+                                CompilerMessageSeverity.ERROR, "Error processing script definition template $template: ${ex.message}", CompilerMessageLocation.NO_LOCATION
+                        )
+                        hasErrors = true
+                        break
+                    }
+                }
+                if (hasErrors) {
+                    messageCollector.report(
+                            CompilerMessageSeverity.LOGGING, "(Classpath used for templates loading: $classpath)", CompilerMessageLocation.NO_LOCATION
+                    )
+                    return
+                }
+            }
+            configuration.add(JVMConfigurationKeys.SCRIPT_DEFINITIONS, StandardScriptDefinition)
         }
     }
 }

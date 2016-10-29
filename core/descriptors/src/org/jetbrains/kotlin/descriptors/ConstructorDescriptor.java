@@ -17,6 +17,7 @@
 package org.jetbrains.kotlin.descriptors;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.kotlin.name.Name;
 import org.jetbrains.kotlin.types.KotlinType;
 import org.jetbrains.kotlin.types.TypeSubstitutor;
@@ -34,13 +35,16 @@ public interface ConstructorDescriptor extends FunctionDescriptor {
 
     @NotNull
     @Override
-    ClassDescriptor getContainingDeclaration();
+    ClassifierDescriptorWithTypeParameters getContainingDeclaration();
+
+    @NotNull
+    ClassDescriptor getConstructedClass();
 
     @NotNull
     @Override
     ConstructorDescriptor getOriginal();
 
-    @NotNull
+    @Nullable
     @Override
     ConstructorDescriptor substitute(@NotNull TypeSubstitutor substitutor);
 

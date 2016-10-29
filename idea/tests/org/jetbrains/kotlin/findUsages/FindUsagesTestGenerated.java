@@ -96,6 +96,12 @@ public class FindUsagesTestGenerated extends AbstractFindUsagesTest {
                 doTest(fileName);
             }
 
+            @TestMetadata("equalsNotAny.0.kt")
+            public void testEqualsNotAny() throws Exception {
+                String fileName = KotlinTestUtils.navigationMetadata("idea/testData/findUsages/kotlin/conventions/equalsNotAny.0.kt");
+                doTest(fileName);
+            }
+
             @TestMetadata("forIteration.0.kt")
             public void testForIteration() throws Exception {
                 String fileName = KotlinTestUtils.navigationMetadata("idea/testData/findUsages/kotlin/conventions/forIteration.0.kt");
@@ -621,6 +627,12 @@ public class FindUsagesTestGenerated extends AbstractFindUsagesTest {
             @TestMetadata("primaryConstructorWithDefaultParams.0.kt")
             public void testPrimaryConstructorWithDefaultParams() throws Exception {
                 String fileName = KotlinTestUtils.navigationMetadata("idea/testData/findUsages/kotlin/findClassUsages/primaryConstructorWithDefaultParams.0.kt");
+                doTest(fileName);
+            }
+
+            @TestMetadata("usageInTypeAlias.0.kt")
+            public void testUsageInTypeAlias() throws Exception {
+                String fileName = KotlinTestUtils.navigationMetadata("idea/testData/findUsages/kotlin/findClassUsages/usageInTypeAlias.0.kt");
                 doTest(fileName);
             }
         }
@@ -1195,6 +1207,21 @@ public class FindUsagesTestGenerated extends AbstractFindUsagesTest {
             }
         }
 
+        @TestMetadata("idea/testData/findUsages/kotlin/findTypeAliasUsages")
+        @TestDataPath("$PROJECT_ROOT")
+        @RunWith(JUnit3RunnerWithInners.class)
+        public static class FindTypeAliasUsages extends AbstractFindUsagesTest {
+            public void testAllFilesPresentInFindTypeAliasUsages() throws Exception {
+                KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("idea/testData/findUsages/kotlin/findTypeAliasUsages"), Pattern.compile("^(.+)\\.0\\.kt$"), true);
+            }
+
+            @TestMetadata("objectAlias.0.kt")
+            public void testObjectAlias() throws Exception {
+                String fileName = KotlinTestUtils.navigationMetadata("idea/testData/findUsages/kotlin/findTypeAliasUsages/objectAlias.0.kt");
+                doTest(fileName);
+            }
+        }
+
         @TestMetadata("idea/testData/findUsages/kotlin/findTypeParameterUsages")
         @TestDataPath("$PROJECT_ROOT")
         @RunWith(JUnit3RunnerWithInners.class)
@@ -1317,6 +1344,12 @@ public class FindUsagesTestGenerated extends AbstractFindUsagesTest {
             @TestMetadata("readAccess.0.kt")
             public void testReadAccess() throws Exception {
                 String fileName = KotlinTestUtils.navigationMetadata("idea/testData/findUsages/kotlin/variable/readAccess.0.kt");
+                doTest(fileName);
+            }
+
+            @TestMetadata("varInDoWhile.0.kt")
+            public void testVarInDoWhile() throws Exception {
+                String fileName = KotlinTestUtils.navigationMetadata("idea/testData/findUsages/kotlin/variable/varInDoWhile.0.kt");
                 doTest(fileName);
             }
 

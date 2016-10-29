@@ -17,18 +17,20 @@
 package org.jetbrains.kotlin.resolve
 
 import org.jetbrains.kotlin.config.LanguageFeature
-import org.jetbrains.kotlin.config.LanguageFeatureSettings
+import org.jetbrains.kotlin.config.LanguageVersionSettings
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.descriptors.annotations.Annotations
 import org.jetbrains.kotlin.descriptors.impl.LocalVariableDescriptor
 import org.jetbrains.kotlin.descriptors.impl.PropertyDescriptorImpl
 import org.jetbrains.kotlin.diagnostics.Errors.*
+import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtPsiUtil
 import org.jetbrains.kotlin.psi.KtVariableDeclaration
 import org.jetbrains.kotlin.resolve.calls.context.ContextDependency
 import org.jetbrains.kotlin.resolve.calls.smartcasts.DataFlowInfo
 import org.jetbrains.kotlin.resolve.calls.smartcasts.DataFlowValueFactory
+import org.jetbrains.kotlin.resolve.calls.util.isSingleUnderscore
 import org.jetbrains.kotlin.resolve.lazy.ForceResolveUtil
 import org.jetbrains.kotlin.resolve.scopes.LexicalScope
 import org.jetbrains.kotlin.resolve.source.toSourceElement
@@ -43,7 +45,7 @@ class LocalVariableResolver(
         private val annotationResolver: AnnotationResolver,
         private val variableTypeResolver: VariableTypeResolver,
         private val delegatedPropertyResolver: DelegatedPropertyResolver,
-        private val languageFeatureSettings: LanguageFeatureSettings
+        private val languageVersionSettings: LanguageVersionSettings
 ) {
 
     fun process(
@@ -72,7 +74,7 @@ class LocalVariableResolver(
 
         val delegateExpression = property.delegateExpression
         if (delegateExpression != null) {
-            if (!languageFeatureSettings.supportsFeature(LanguageFeature.LocalDelegatedProperties)) {
+            if (!languageVersionSettings.supportsFeature(LanguageFeature.LocalDelegatedProperties)) {
                 context.trace.report(LOCAL_VARIABLE_WITH_DELEGATE.on(property.delegate!!))
             }
 
@@ -186,11 +188,16 @@ class LocalVariableResolver(
             type: KotlinType?,
             trace: BindingTrace
     ): LocalVariableDescriptor {
-        val hasDelegate = variable is KtProperty && variable.hasDelegate();
+        val hasDelegate = variable is KtProperty && variable.hasDelegate()
         val variableDescriptor = LocalVariableDescriptor(
                 scope.ownerDescriptor,
                 annotationResolver.resolveAnnotationsWithArguments(scope, variable.modifierList, trace),
-                KtPsiUtil.safeName(variable.name),
+                // Note, that the same code works both for common local vars and for destructuring declarations,
+                // but since the first case is illegal error must be reported somewhere else
+                if (variable.isSingleUnderscore)
+                    Name.special("<underscore local var>")
+                else
+                    KtPsiUtil.safeName(variable.name),
                 type,
                 variable.isVar,
                 hasDelegate,

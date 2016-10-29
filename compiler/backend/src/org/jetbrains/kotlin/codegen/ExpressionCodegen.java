@@ -68,7 +68,6 @@ import org.jetbrains.kotlin.resolve.BindingContext;
 import org.jetbrains.kotlin.resolve.BindingContextUtils;
 import org.jetbrains.kotlin.resolve.DescriptorToSourceUtils;
 import org.jetbrains.kotlin.resolve.DescriptorUtils;
-import org.jetbrains.kotlin.resolve.annotations.AnnotationUtilKt;
 import org.jetbrains.kotlin.resolve.bindingContextUtil.BindingContextUtilsKt;
 import org.jetbrains.kotlin.resolve.calls.callResolverUtil.CallResolverUtilKt;
 import org.jetbrains.kotlin.resolve.calls.callUtil.CallUtilKt;
@@ -635,10 +634,10 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
             @NotNull ResolvedCall<? extends CallableDescriptor> loopRangeCall
     ) {
         CallableDescriptor loopRangeCallee = loopRangeCall.getResultingDescriptor();
-        if (RangeCodegenUtil.isOptimizableRangeTo(loopRangeCallee)) {
+        if (RangeCodegenUtil.isPrimitiveNumberRangeTo(loopRangeCallee)) {
             return new ForInRangeLiteralLoopGenerator(forExpression, loopRangeCall);
         }
-        else if (RangeCodegenUtil.isOptimizableDownTo(loopRangeCallee)) {
+        else if (RangeCodegenUtil.isPrimitiveNumberDownTo(loopRangeCallee)) {
             return new ForInDownToProgressionLoopGenerator(forExpression, loopRangeCall);
         }
         else if (RangeCodegenUtil.isArrayOrPrimitiveArrayIndices(loopRangeCallee)) {
@@ -735,7 +734,14 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
 
         public void beforeLoop() {
             KtParameter loopParameter = forExpression.getLoopParameter();
-            if (loopParameter != null) {
+            if (loopParameter == null) return;
+            KtDestructuringDeclaration multiParameter = loopParameter.getDestructuringDeclaration();
+            if (multiParameter != null) {
+                // E tmp<e> = tmp<iterator>.next()
+                loopParameterType = asmElementType;
+                loopParameterVar = createLoopTempVariable(asmElementType);
+            }
+            else {
                 // E e = tmp<iterator>.next()
                 final VariableDescriptor parameterDescriptor = bindingContext.get(VALUE_PARAMETER, loopParameter);
                 loopParameterType = asmType(parameterDescriptor.getType());
@@ -751,14 +757,6 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
                     }
                 });
             }
-            else {
-                KtDestructuringDeclaration multiParameter = forExpression.getDestructuringParameter();
-                assert multiParameter != null;
-
-                // E tmp<e> = tmp<iterator>.next()
-                loopParameterType = asmElementType;
-                loopParameterVar = createLoopTempVariable(asmElementType);
-            }
         }
 
         public abstract void checkEmptyLoop(@NotNull Label loopExit);
@@ -769,40 +767,47 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
             assignToLoopParameter();
             v.mark(loopParameterStartLabel);
 
-            if (forExpression.getLoopParameter() == null) {
-                KtDestructuringDeclaration multiParameter = forExpression.getDestructuringParameter();
-                assert multiParameter != null;
-
-                generateMultiVariables(multiParameter.getEntries());
+            KtDestructuringDeclaration destructuringDeclaration = forExpression.getDestructuringDeclaration();
+            if (destructuringDeclaration != null) {
+                generateDestructuringDeclaration(destructuringDeclaration);
             }
         }
 
-        private void generateMultiVariables(List<KtDestructuringDeclarationEntry> entries) {
-            for (KtDestructuringDeclarationEntry variableDeclaration : entries) {
-                final VariableDescriptor componentDescriptor = bindingContext.get(VARIABLE, variableDeclaration);
+        private void generateDestructuringDeclaration(@NotNull KtDestructuringDeclaration destructuringDeclaration) {
+            final Label destructuringStartLabel = new Label();
 
+            List<VariableDescriptor> componentDescriptors =
+                    CollectionsKt.map(
+                            destructuringDeclaration.getEntries(),
+                            new Function1<KtDestructuringDeclarationEntry, VariableDescriptor>() {
+                                @Override
+                                public VariableDescriptor invoke(KtDestructuringDeclarationEntry entry) {
+                                    return getVariableDescriptorNotNull(entry);
+                                }
+                            }
+                    );
+
+            for (final VariableDescriptor componentDescriptor : CodegenUtilKt.filterOutDescriptorsWithSpecialNames(componentDescriptors)) {
                 @SuppressWarnings("ConstantConditions") final Type componentAsmType = asmType(componentDescriptor.getReturnType());
                 final int componentVarIndex = myFrameMap.enter(componentDescriptor, componentAsmType);
-                final Label variableStartLabel = new Label();
                 scheduleLeaveVariable(new Runnable() {
                     @Override
                     public void run() {
                         myFrameMap.leave(componentDescriptor);
                         v.visitLocalVariable(componentDescriptor.getName().asString(),
                                              componentAsmType.getDescriptor(), null,
-                                             variableStartLabel, bodyEnd,
+                                             destructuringStartLabel, bodyEnd,
                                              componentVarIndex);
                     }
                 });
-
-                ResolvedCall<FunctionDescriptor> resolvedCall = bindingContext.get(COMPONENT_RESOLVED_CALL, variableDeclaration);
-                assert resolvedCall != null : "Resolved call is null for " + variableDeclaration.getText();
-                Call call = makeFakeCall(new TransientReceiver(elementType));
-
-                StackValue value = invokeFunction(call, resolvedCall, StackValue.local(loopParameterVar, asmElementType));
-                StackValue.local(componentVarIndex, componentAsmType).store(value, v);
-                v.visitLabel(variableStartLabel);
             }
+
+            v.visitLabel(destructuringStartLabel);
+
+            initializeDestructuringDeclarationVariables(
+                    destructuringDeclaration,
+                    new TransientReceiver(elementType),
+                    StackValue.local(loopParameterVar, asmElementType));
         }
 
         protected abstract void assignToLoopParameter();
@@ -1589,7 +1594,7 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
         assert descriptor != null : "Function is not resolved to descriptor: " + declaration.getText();
 
         return genClosure(
-                declaration, descriptor, new FunctionGenerationStrategy.FunctionDefault(state, declaration), samType, null, null
+                declaration, descriptor, new ClosureGenerationStrategy(state, declaration), samType, null, null
         );
     }
 
@@ -1672,7 +1677,7 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
                     argumentGenerator.generate(valueArguments, valueArguments);
                 }
 
-                Collection<ConstructorDescriptor> constructors = classDescriptor.getConstructors();
+                Collection<ClassConstructorDescriptor> constructors = classDescriptor.getConstructors();
                 assert constructors.size() == 1 : "Unexpected number of constructors for class: " + classDescriptor + " " + constructors;
                 ConstructorDescriptor constructorDescriptor = CollectionsKt.single(constructors);
 
@@ -1962,8 +1967,10 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
     }
 
     private void putLocalVariableIntoFrameMap(@NotNull KtVariableDeclaration statement) {
-        VariableDescriptor variableDescriptor = bindingContext.get(VARIABLE, statement);
-        assert variableDescriptor != null : "Couldn't find variable declaration in binding context " + statement.getText();
+        VariableDescriptor variableDescriptor = getVariableDescriptorNotNull(statement);
+        // Do not modify local variables table for variables like _ in val (_, y) = pair
+        // They always will have special name
+        if (variableDescriptor.getName().isSpecial()) return;
 
         Type type = getVariableType(variableDescriptor);
         int index = myFrameMap.enter(variableDescriptor, type);
@@ -2007,8 +2014,11 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
             final Label blockEnd,
             @NotNull List<Function<StackValue, Void>> leaveTasks
     ) {
-        final VariableDescriptor variableDescriptor = bindingContext.get(VARIABLE, statement);
-        assert variableDescriptor != null;
+        final VariableDescriptor variableDescriptor = getVariableDescriptorNotNull(statement);
+
+        // Do not modify local variables table for variables like _ in val (_, y) = pair
+        // They always will have special name
+        if (variableDescriptor.getName().isSpecial()) return;
 
         final Type type = getVariableType(variableDescriptor);
 
@@ -3092,7 +3102,7 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
         boolean isSingleton = calleeContainingClass.getKind().isSingleton();
         if (isSingleton) {
             if (calleeContainingClass.equals(context.getThisDescriptor()) &&
-                !AnnotationUtilKt.isPlatformStaticInObjectOrClass(context.getContextDescriptor())) {
+                !CodegenUtilKt.isJvmStaticInObjectOrClass(context.getContextDescriptor())) {
                 return StackValue.local(0, typeMapper.mapType(calleeContainingClass));
             }
             else if (isEnumEntry(calleeContainingClass)) {
@@ -3270,15 +3280,11 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
             );
         }
 
-        VariableDescriptor variableDescriptor = bindingContext.get(VARIABLE, expression);
-        if (variableDescriptor != null) {
-            return generatePropertyReference(
-                    expression, variableDescriptor, (VariableDescriptor) resolvedCall.getResultingDescriptor(),
-                    receiverAsmType, receiverValue
-            );
-        }
-
-        throw new UnsupportedOperationException("Unsupported callable reference expression: " + expression.getText());
+        VariableDescriptor variableDescriptor = getVariableDescriptorNotNull(expression);
+        return generatePropertyReference(
+                expression, variableDescriptor, (VariableDescriptor) resolvedCall.getResultingDescriptor(),
+                receiverAsmType, receiverValue
+        );
     }
 
     @NotNull
@@ -3448,61 +3454,81 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
         final KtExpression deparenthesized = KtPsiUtil.deparenthesize(rangeExpression);
 
         assert deparenthesized != null : "For with empty range expression";
-
+        final boolean isInverted = operationReference.getReferencedNameElementType() == KtTokens.NOT_IN;
         return StackValue.operation(Type.BOOLEAN_TYPE, new Function1<InstructionAdapter, Unit>() {
             @Override
             public Unit invoke(InstructionAdapter v) {
-                if (isIntRangeExpr(deparenthesized) && AsmUtil.isIntPrimitive(leftValue.type)) {
-                    genInIntRange(leftValue, (KtBinaryExpression) deparenthesized);
+                if (RangeCodegenUtil.isPrimitiveRangeSpecializationOfType(leftValue.type, deparenthesized, bindingContext) ||
+                    RangeCodegenUtil.isPrimitiveRangeToExtension(operationReference, bindingContext)) {
+                    generateInPrimitiveRange(leftValue, (KtBinaryExpression) deparenthesized, isInverted);
                 }
                 else {
                     ResolvedCall<? extends CallableDescriptor> resolvedCall = CallUtilKt
                             .getResolvedCallWithAssert(operationReference, bindingContext);
                     StackValue result = invokeFunction(resolvedCall.getCall(), resolvedCall, StackValue.none());
                     result.put(result.type, v);
-                }
-                if (operationReference.getReferencedNameElementType() == KtTokens.NOT_IN) {
-                    genInvertBoolean(v);
+                    if (isInverted) {
+                        genInvertBoolean(v);
+                    }
                 }
                 return null;
             }
         });
     }
 
-    private void genInIntRange(StackValue leftValue, KtBinaryExpression rangeExpression) {
-        v.iconst(1);
-        // 1
-        leftValue.put(Type.INT_TYPE, v);
-        // 1 l
-        v.dup2();
-        // 1 l 1 l
+    /*
+     * Translates x in a..b to a <= x && x <= b
+     * and x !in a..b to a > x || x > b for any primitive type
+     */
+    private void generateInPrimitiveRange(StackValue argument, KtBinaryExpression rangeExpression, boolean isInverted) {
+        Type rangeType = argument.type;
+        int localVarIndex = myFrameMap.enterTemp(rangeType);
+        // Load left bound
+        gen(rangeExpression.getLeft(), rangeType);
+        // Load x into local variable to avoid StackValue#put side-effects
+        argument.put(rangeType, v);
+        v.store(localVarIndex, rangeType);
+        v.load(localVarIndex, rangeType);
 
-        //noinspection ConstantConditions
-        gen(rangeExpression.getLeft(), Type.INT_TYPE);
-        // 1 l 1 l r
-        Label lok = new Label();
-        v.ificmpge(lok);
-        // 1 l 1
-        v.pop();
-        v.iconst(0);
-        v.mark(lok);
-        // 1 l c
-        v.dupX2();
-        // c 1 l c
-        v.pop();
-        // c 1 l
+        // If (x < left) goto L1
+        Label l1 = new Label();
+        emitGreaterThan(rangeType, l1);
 
-        gen(rangeExpression.getRight(), Type.INT_TYPE);
-        // c 1 l r
-        Label rok = new Label();
-        v.ificmple(rok);
-        // c 1
-        v.pop();
-        v.iconst(0);
-        v.mark(rok);
-        // c c
+        // If (x > right) goto L1
+        v.load(localVarIndex, rangeType);
+        gen(rangeExpression.getRight(), rangeType);
+        emitGreaterThan(rangeType, l1);
 
-        v.and(Type.INT_TYPE);
+        Label l2 = new Label();
+        v.iconst(isInverted ? 0 : 1);
+        v.goTo(l2);
+
+        v.mark(l1);
+        v.iconst(isInverted ? 1 : 0);
+        v.mark(l2);
+        myFrameMap.leaveTemp(rangeType);
+    }
+
+    private void emitGreaterThan(Type type, Label label) {
+        if (AsmUtil.isIntPrimitive(type)) {
+            v.ificmpgt(label);
+        }
+        else if (type == Type.LONG_TYPE) {
+            v.lcmp();
+            v.ifgt(label);
+        }
+        // '>' != 'compareTo' for NaN and +/- 0.0
+        else if (type == Type.FLOAT_TYPE) {
+            v.invokestatic("java/lang/Float", "compare", "(FF)I", false);
+            v.ifgt(label);
+        }
+        else if (type == Type.DOUBLE_TYPE) {
+            v.invokestatic("java/lang/Double", "compare", "(DD)I", false);
+            v.ifgt(label);
+        }
+        else {
+            throw new UnsupportedOperationException("Unexpected type: " + type);
+        }
     }
 
     private StackValue generateBooleanAnd(KtBinaryExpression expression) {
@@ -3872,12 +3898,7 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
         v.store(tempVarIndex, initializerAsmType);
         StackValue.Local local = StackValue.local(tempVarIndex, initializerAsmType);
 
-        for (KtDestructuringDeclarationEntry variableDeclaration : multiDeclaration.getEntries()) {
-            ResolvedCall<FunctionDescriptor> resolvedCall = bindingContext.get(COMPONENT_RESOLVED_CALL, variableDeclaration);
-            assert resolvedCall != null : "Resolved call is null for " + variableDeclaration.getText();
-            Call call = makeFakeCall(initializerAsReceiver);
-            initializeLocalVariable(variableDeclaration, invokeFunction(call, resolvedCall, local));
-        }
+        initializeDestructuringDeclarationVariables(multiDeclaration, initializerAsReceiver, local);
 
         if (initializerAsmType.getSort() == Type.OBJECT || initializerAsmType.getSort() == Type.ARRAY) {
             v.aconst(null);
@@ -3886,6 +3907,25 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
         myFrameMap.leaveTemp(initializerAsmType);
 
         return StackValue.none();
+    }
+
+    public void initializeDestructuringDeclarationVariables(
+            @NotNull KtDestructuringDeclaration destructuringDeclaration,
+            @NotNull ReceiverValue receiver,
+            @NotNull StackValue receiverStackValue
+    ) {
+        for (KtDestructuringDeclarationEntry variableDeclaration : destructuringDeclaration.getEntries()) {
+            ResolvedCall<FunctionDescriptor> resolvedCall = bindingContext.get(COMPONENT_RESOLVED_CALL, variableDeclaration);
+            assert resolvedCall != null : "Resolved call is null for " + variableDeclaration.getText();
+            Call call = makeFakeCall(receiver);
+
+            VariableDescriptor variableDescriptor = getVariableDescriptorNotNull(variableDeclaration);
+
+            // Do not call `componentX` for destructuring entry called _
+            if (variableDescriptor.getName().isSpecial()) continue;
+
+            initializeLocalVariable(variableDeclaration, invokeFunction(call, resolvedCall, receiverStackValue));
+        }
     }
 
     @NotNull
@@ -3908,7 +3948,7 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
             @NotNull KtVariableDeclaration variableDeclaration,
             @NotNull StackValue initializer
     ) {
-        LocalVariableDescriptor variableDescriptor = (LocalVariableDescriptor) bindingContext.get(VARIABLE, variableDeclaration);
+        LocalVariableDescriptor variableDescriptor = (LocalVariableDescriptor) getVariableDescriptorNotNull(variableDeclaration);
 
         if (KtPsiUtil.isScriptDeclaration(variableDeclaration)) {
             return;
@@ -3920,7 +3960,6 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
         }
 
         Type sharedVarType = typeMapper.getSharedVarType(variableDescriptor);
-        assert variableDescriptor != null;
 
         Type varType = getVariableTypeNoSharing(variableDescriptor);
 
@@ -3938,6 +3977,13 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
             initializePropertyMetadata((KtProperty) variableDeclaration, variableDescriptor, metadataValue);
             invokePropertyDelegatedOnLocalVar(variableDescriptor, storeTo, metadataValue);
         }
+    }
+
+    @NotNull
+    private VariableDescriptor getVariableDescriptorNotNull(@NotNull KtElement declaration) {
+        VariableDescriptor descriptor = bindingContext.get(VARIABLE, declaration);
+        assert descriptor != null :  "Couldn't find variable declaration in binding context " + declaration.getText();
+        return descriptor;
     }
 
     private void invokePropertyDelegatedOnLocalVar(
@@ -3976,11 +4022,11 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
     }
 
     @NotNull
-    public ConstructorDescriptor getConstructorDescriptor(@NotNull ResolvedCall<?> resolvedCall) {
+    public ClassConstructorDescriptor getConstructorDescriptor(@NotNull ResolvedCall<?> resolvedCall) {
         FunctionDescriptor accessibleDescriptor = accessibleFunctionDescriptor(resolvedCall);
         assert accessibleDescriptor instanceof ConstructorDescriptor :
                 "getConstructorDescriptor must be called only for constructors: " + accessibleDescriptor;
-        return (ConstructorDescriptor) accessibleDescriptor;
+        return (ClassConstructorDescriptor) accessibleDescriptor;
     }
 
     @NotNull
@@ -3991,7 +4037,7 @@ public class ExpressionCodegen extends KtVisitor<StackValue, StackValue> impleme
                 v.anew(objectType);
                 v.dup();
 
-                ConstructorDescriptor constructor = getConstructorDescriptor(resolvedCall);
+                ClassConstructorDescriptor constructor = getConstructorDescriptor(resolvedCall);
 
                 ReceiverParameterDescriptor dispatchReceiver = constructor.getDispatchReceiverParameter();
                 ClassDescriptor containingDeclaration = constructor.getContainingDeclaration();
@@ -4537,19 +4583,6 @@ The "returned" value of try expression with no finally is either the last expres
         else {
             throw new UnsupportedOperationException("unsupported kind of when condition");
         }
-    }
-
-    private boolean isIntRangeExpr(KtExpression rangeExpression) {
-        if (rangeExpression instanceof KtBinaryExpression) {
-            KtBinaryExpression binaryExpression = (KtBinaryExpression) rangeExpression;
-            if (binaryExpression.getOperationReference().getReferencedNameElementType() == KtTokens.RANGE) {
-                KotlinType jetType = bindingContext.getType(rangeExpression);
-                assert jetType != null;
-                DeclarationDescriptor descriptor = jetType.getConstructor().getDeclarationDescriptor();
-                return DescriptorUtilsKt.getBuiltIns(descriptor).getIntegralRanges().contains(descriptor);
-            }
-        }
-        return false;
     }
 
     private Call makeFakeCall(ReceiverValue initializerAsReceiver) {

@@ -138,8 +138,8 @@ class DefaultParameterValueSubstitutor(val state: GenerationState) {
             annotationCodegen.genAnnotations(it.value, signature.valueParameters[it.index].asmType)
         }
 
-        if (state.classBuilderMode != ClassBuilderMode.FULL) {
-            FunctionCodegen.generateLocalVariablesForParameters(mv, signature, null, Label(), Label(), remainingParameters, isStatic)
+        if (!state.classBuilderMode.generateBodies) {
+            FunctionCodegen.generateLocalVariablesForParameters(mv, signature, null, Label(), Label(), remainingParameters, isStatic, typeMapper)
             mv.visitEnd()
             return
         }
@@ -215,7 +215,7 @@ class DefaultParameterValueSubstitutor(val state: GenerationState) {
         mv.visitLabel(methodEnd)
 
         FunctionCodegen.generateLocalVariablesForParameters(mv, signature, null, methodBegin, methodEnd,
-                                                            remainingParameters, isStatic)
+                                                            remainingParameters, isStatic, typeMapper)
 
         FunctionCodegen.endVisit(mv, null, methodElement)
     }
@@ -227,7 +227,7 @@ class DefaultParameterValueSubstitutor(val state: GenerationState) {
     }
 
     private fun isEmptyConstructorNeeded(constructorDescriptor: ConstructorDescriptor, classOrObject: KtClassOrObject): Boolean {
-        val classDescriptor = constructorDescriptor.containingDeclaration
+        val classDescriptor = constructorDescriptor.constructedClass
         if (classDescriptor.kind != ClassKind.CLASS) return false
 
         if (classOrObject.isLocal()) return false
